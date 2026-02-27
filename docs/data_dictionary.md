@@ -103,7 +103,7 @@ $$
 Step 1: daily return calculation
 
 $$
-r_{i,t} = \ln\!\left(\frac{P_{i,t}}{P_{i,t-1}}\right)
+r_{i,t} = \ln\left(\frac{P_{i,t}}{P_{i,t-1}}\right)
 $$
 
 Step 2: Daily and Quarterly Historical Volatility
@@ -117,7 +117,7 @@ $$
 - Annual historical volatility (12m)
 
 $$
-r_{i,t} = \ln\!\left(\frac{P_{i,t}}{P_{i,t-1}}\right)
+r_{i,t} = \ln\left(\frac{P_{i,t}}{P_{i,t-1}}\right)
 $$
 
 \(\sigma_{\mathrm{daily}} = \mathrm{Std}(r_{i,t})\), rolling window = 252 trading days.
