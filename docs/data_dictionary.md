@@ -15,7 +15,7 @@ This document supports “Create and update data dictionaries” by defining fie
 
 > Note: `company_static` is a course-provided table. Actual fields should follow the real database schema; the above is the minimum set required by the pipeline.
 
-## 3. File: MinIO raw/run_date=YYYY-MM-DD/{ticker}.csv (Raw Market Data)
+## 3. File: MinIO raw/market_data/run_date=YYYY-MM-DD/{ticker}.csv (Raw Market Data)
 
 | Field Name | Type (Recommended) | Nullable | Description | Example | Rule |
 |---|---|---|---|---|---|
@@ -26,7 +26,23 @@ This document supports “Create and update data dictionaries” by defining fie
 | source | VARCHAR(50) | Yes | Data source | yahoo_finance | Audit field |
 | ingest_ts | TIMESTAMP | Yes | Ingestion timestamp | 2026-02-27 12:00:00 | Audit field |
 
-## 4. Table: systematic_equity.factor_values (Output)
+## 4. File: MinIO raw/fundamental_data/run_date=YYYY-MM-DD/{ticker}.csv (Raw Fundamental Data)
+
+| Field Name | Type (Recommended) | Nullable | Description | Example | Rule |
+|---|---|---|---|---|---|
+| report_date | DATE | No | Financial report date | 2025-12-31 | Unified as UTC date |
+| report_period | VARCHAR(10) | No | Financial report period/type | FY | e.g., FY, Q1, Q2, Q3 |
+| currency | VARCHAR(10) | No | Reporting currency | USD | ISO currency code |
+| total_assets | DOUBLE PRECISION | Yes | Total assets (TA) | 352755000000 | >= 0 |
+| total_debt | DOUBLE PRECISION | Yes | Total debt | 111088000000 | >= 0 |
+| net_income | DOUBLE PRECISION | Yes | Net income | 96995000000 | Can be negative |
+| book_equity | DOUBLE PRECISION | Yes | Book value of equity (BVE) | 62146000000 | Can be negative |
+| shares_outstanding | BIGINT | Yes | Shares outstanding | 15550000000 | > 0 |
+| eps | DOUBLE PRECISION | Yes | Earnings per share | 6.16 | Can be negative |
+| source | VARCHAR(50) | Yes | Data source | yahoo_finance | Audit field |
+| ingest_ts | TIMESTAMP | Yes | Ingestion timestamp | 2026-02-27 12:00:00 | Audit field |
+
+## 5. Table: systematic_equity.factor_values (Output)
 
 Suggested DDL:
 
@@ -51,9 +67,9 @@ Field definitions:
 | factor_value | DOUBLE PRECISION | Yes | Factor value | 0.1432 | Supports negative and null values (when history is insufficient) |
 | created_at | TIMESTAMP | No | Record creation timestamp | 2026-02-27 12:01:11 | Defaults to current time |
 
-## 5. Calculated Field Dictionary (Core Factor Definitions)
+## 6. Calculated Field Dictionary (Core Factor Definitions)
 
-### 5.1 Momentum
+### 6.1 Momentum
 - Field name: `momentum_score`
 - Definition (dual-signal excess momentum, excluding the most recent month):
 
@@ -96,7 +112,7 @@ $$
 - Input fields: `date`, `close` (optional `risk_free_rate_1m`)
 - Output persistence: `factor_name='momentum'`, `factor_value=momentum_score`
 
-### 5.2 Low Volatility
+### 6.2 Low Volatility
 - Field name: `lowvol_score`
 - Quarterly historical volatility (3m)
 
@@ -140,7 +156,7 @@ $$
 
 - Dependency: adjusted close price time series with sufficient daily history
 
-### 5.3 Value
+### 6.3 Value
 - Field name: `value_score`
 - Asset growth:
 
@@ -170,7 +186,7 @@ $$
 
 - Dependencies: total assets, book value of equity, shares outstanding, adjusted close price
 
-### 5.4 Quality
+### 6.4 Quality
 - Field name: `quality_score`
 - Profitability metrics:
 
@@ -206,12 +222,12 @@ $$
 
 - Dependencies: net income, total assets, equity, debt, and at least 5 years of EPS history
 
-## 6. Data Validation Rules (Before Write)
+## 7. Data Validation Rules (Before Write)
 - Primary-key fields must not be null: `company_id`, `factor_date`, `factor_name`
 - Date validity: must not be later than run date `run_date`
 - Numeric validity: price > 0; volatility >= 0
 - Deduplication rule: keep only one record per `(company_id, factor_date, factor_name)`
 
-## 7. Update Mechanism
+## 8. Update Mechanism
 - If any field is added/renamed/type-changed, update this dictionary synchronously.
 - If calculation definitions change, a new “definition version” (e.g., `momentum_v2`) must be introduced and its effective date recorded.
