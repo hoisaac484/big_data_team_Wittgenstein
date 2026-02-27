@@ -161,7 +161,7 @@ Earnings Variability
 Standard deviation of Year-on-Year EPS growth over the last five fiscal years.
 
 $$
-\mathrm{EVAR}_{i,t} = \mathrm{Std}\!\left(\Delta \mathrm{EPS}_{i,t-4:t}\right)
+\mathrm{EVAR}_{i,t} = \mathrm{Std}\left(\Delta \mathrm{EPS}_{i,t-4:t}\right)
 $$
 
 Lower variability indicates more stable and predictable earnings.
@@ -294,7 +294,7 @@ The main ratios used to construct the low volatility factor are Quarterly Histor
 Step 1: daily return calculation
 
 $$
-r_{i,t} = \ln\!\left(\frac{P_{i,t}}{P_{i,t-1}}\right)
+r_{i,t} = \ln\left(\frac{P_{i,t}}{P_{i,t-1}}\right)
 $$
 
 where Pi,t is the adjusted closing price of stock i at time t, adjusted prices are used to account for dividends and stock splits (Baker, M., Bradley, B., & Wurgler, J., 2011).
@@ -312,7 +312,7 @@ $$
 (2) Annual Historical Volatility
 
 $$
-r_{i,t} = \ln\!\left(\frac{P_{i,t}}{P_{i,t-1}}\right)
+r_{i,t} = \ln\left(\frac{P_{i,t}}{P_{i,t-1}}\right)
 $$
 
 $\sigma_{\mathrm{daily}} = \mathrm{Std}(r_{i,t})$, rolling window = 252 trading days.
