@@ -58,18 +58,18 @@ Field definitions:
 - Definition (dual-signal excess momentum, excluding the most recent month):
 
 $$
-\mathrm{MOM}_{i,6,t} = \left(\frac{P_{i,t-1}}{P_{i,t-7}} - 1\right) - RF^{(1m)}_{c,t}
+\mathrm{MOM}_{i,6,t} = \left(\frac{P_{i,t-1}}{P_{i,t-7}} - 1\right) - RF_{c,t}^{(1m)}
 $$
 
 $$
-\mathrm{MOM}_{i,12,t} = \left(\frac{P_{i,t-1}}{P_{i,t-13}} - 1\right) - RF^{(1m)}_{c,t}
+\mathrm{MOM}_{i,12,t} = \left(\frac{P_{i,t-1}}{P_{i,t-13}} - 1\right) - RF_{c,t}^{(1m)}
 $$
 
 Where:
 - \(P_{i,t-1}\): adjusted close price of stock \(i\) at month \(t-1\)
 - \(P_{i,t-7}\): adjusted close price of stock \(i\) at month \(t-7\)
 - \(P_{i,t-13}\): adjusted close price of stock \(i\) at month \(t-13\)
-- \(RF^{(1m)}_{c,t}\): 1-month risk-free rate for country \(c\) at month \(t\)
+- \(RF_{c,t}^{(1m)}\): 1-month risk-free rate for country \(c\) at month \(t\)
 
 Sector z-score standardization:
 
@@ -98,28 +98,44 @@ $$
 
 ### 5.2 Low Volatility
 - Field name: `lowvol_score`
-- Daily log return:
+- Quarterly historical volatility (3m)
+
+Step 1: daily return calculation
 
 $$
-r_{i,d} = \ln\!\left(\frac{P_{i,d}}{P_{i,d-1}}\right)
+r_{i,t} = \ln\!\left(\frac{P_{i,t}}{P_{i,t-1}}\right)
 $$
 
-- Rolling volatility on window \(w\in\{63,252\}\):
+Step 2: Daily and Quarterly Historical Volatility
+
+\(\sigma_{\mathrm{daily}} = \mathrm{Std}(r_{i,t})\), rolling window = 63 trading days.
 
 $$
-\sigma_{i,t}^{(w)} = \mathrm{SD}\!\left(r_{i,d}\right)_{d=t-w+1}^{t}
+\sigma_{i,3m,t} = \sqrt{63}\,\sigma_{\mathrm{daily}}
 $$
 
-- Sector cross-sectional standardization:
+- Annual historical volatility (12m)
 
 $$
-Z_{i,t}^{(w)} = \frac{\sigma_{i,t}^{(w)} - \mu_{\text{sector},t}^{(w)}}{\sigma_{\text{sector},t}^{(w)}}
+r_{i,t} = \ln\!\left(\frac{P_{i,t}}{P_{i,t-1}}\right)
 $$
 
-- Composite low-vol score (lower volatility is better, so use negative sign):
+\(\sigma_{\mathrm{daily}} = \mathrm{Std}(r_{i,t})\), rolling window = 252 trading days.
 
 $$
-\mathrm{LowVol\ Score}_{i,t} = -\frac{1}{2}\left(Z_{i,t}^{(63)} + Z_{i,t}^{(252)}\right)
+\sigma_{i,12m,t} = \sqrt{252}\,\sigma_{\mathrm{daily}}
+$$
+
+- Cross-sectional z-score standardization:
+
+$$
+Z^{\mathrm{vol}}_{i,h,t} = \frac{\sigma_{i,h,t} - \mu^{\sigma}_{h,t}}{s^{\sigma}_{h,t}},\quad h \in \{3m,12m\}
+$$
+
+- Composite low-vol score (lower volatility is preferred):
+
+$$
+\mathrm{LowVol\ Score}_{i,t} = -\frac{Z^{\mathrm{vol}}_{i,12m,t} + Z^{\mathrm{vol}}_{i,3m,t}}{2}
 $$
 
 - Dependency: adjusted close price time series with sufficient daily history

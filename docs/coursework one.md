@@ -297,33 +297,23 @@ where Pi,t is the adjusted closing price of stock i at time t, adjusted prices a
 
 Step 2: Daily and Quarterly Historical Volatility
 
-$$
-\sigma^{(63)}_{i,\text{daily},t} = \mathrm{SD}\!\left(r_{i,t-62:t}\right)
-$$
+σdaily = Std(ri,t)
 
 Where the rolling window is 63 days.
 
-$$
-\sigma_{i,3m,t} = \sqrt{63}\,\sigma^{(63)}_{i,\text{daily},t}
-$$
+σi,3m = √63 σdaily
 
 63 is the approximate number of trading days in 3 months. This shorter-term measure captures recent changes in risk and allows the model to detect volatility regime shifts.
 
 (2) Annual Historical Volatility
 
-$$
-r_{i,t} = \ln\!\left(\frac{P_{i,t}}{P_{i,t-1}}\right)
-$$
+ri,t = ln(Pi,t/Pi,t-1)
 
-$$
-\sigma^{(252)}_{i,\text{daily},t} = \mathrm{SD}\!\left(r_{i,t-251:t}\right)
-$$
+σdaily = Std(ri,t)
 
 Where the rolling window is 252 days.
 
-$$
-\sigma_{i,12m,t} = \sqrt{252}\,\sigma^{(252)}_{i,\text{daily},t}
-$$
+σi,12m = √252 σdaily
 
 252 is the approximate number of trading days in one year. This measure captures medium-term risk exposure and is the primary signal used in portfolio construction.
 
