@@ -1,0 +1,16 @@
+postgres:
+  host: "localhost"
+  port: 5439
+  database: "fift"
+  user: "postgres"
+  password: "postgres"
+
+mongo:
+  host: "localhost"
+  port: 27019
+
+minio:
+  host: "localhost:9000"
+  access_key: "ift_bigdata"
+  secret_key: "minio_password"
+  secure: false

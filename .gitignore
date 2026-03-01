@@ -2,4 +2,25 @@ postgres-data/
 CLAUDE.md
 CONTEXT.MD
 .vscode/settings.json
-.vscode/settings.json
+CLAUDE_CODE_CONTEXT.md
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+.venv/
+
+# IDE
+.idea/
+
+# OS files
+.DS_Store
+
+# Environment / secrets
+.env
