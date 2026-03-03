@@ -299,6 +299,11 @@ class DataFetcher:
         if raw_df is None or raw_df.empty:
             return None
 
+        # Flatten MultiIndex columns (yfinance returns these for single-symbol downloads)
+        if isinstance(raw_df.columns, pd.MultiIndex):
+            raw_df = raw_df.copy()
+            raw_df.columns = raw_df.columns.get_level_values(0)
+
         df = raw_df.reset_index()
 
         column_map = {

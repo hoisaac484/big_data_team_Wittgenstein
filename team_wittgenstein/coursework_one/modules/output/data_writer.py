@@ -39,13 +39,13 @@ class DataWriter:
     def write_prices(self, df):
         """Write daily price data to PostgreSQL.
 
-        Filters out rows that already exist (by symbol + price_date)
+        Filters out rows that already exist (by symbol + trade_date)
         to prevent duplicate key violations on re-runs.
 
         Args:
-            df: Price DataFrame with columns: symbol, price_date,
+            df: Price DataFrame with columns: symbol, trade_date,
                 open_price, high_price, low_price, close_price,
-                adj_close, volume.
+                adjusted_close, volume, source.
 
         Returns:
             int: Number of new rows written.
@@ -55,18 +55,18 @@ class DataWriter:
             return 0
 
         df = df.copy()
-        df["price_date"] = pd.to_datetime(df["price_date"])
+        df["trade_date"] = pd.to_datetime(df["trade_date"])
 
         # Get existing (symbol, date) pairs to avoid duplicates
         existing = self._get_existing_keys(
-            "daily_prices", "symbol", "price_date"
+            "price_data", "symbol", "trade_date"
         )
 
         before = len(df)
         if existing is not None and not existing.empty:
-            existing["price_date"] = pd.to_datetime(existing["price_date"])
+            existing["trade_date"] = pd.to_datetime(existing["trade_date"])
             merged = df.merge(
-                existing, on=["symbol", "price_date"],
+                existing, on=["symbol", "trade_date"],
                 how="left", indicator=True,
             )
             df = merged[merged["_merge"] == "left_only"].drop(
@@ -82,7 +82,7 @@ class DataWriter:
             logger.info("Prices: no new rows to write.")
             return 0
 
-        self.pg.write_dataframe(df, "daily_prices", SCHEMA)
+        self.pg.write_dataframe(df, "price_data", SCHEMA)
         logger.info("Prices: wrote %d new rows to PostgreSQL", new_rows)
 
         # Update CTL files
@@ -95,13 +95,14 @@ class DataWriter:
     def write_financials(self, df):
         """Write quarterly financial data to PostgreSQL.
 
-        Filters out rows that already exist (by symbol + fiscal_date)
-        to prevent duplicate key violations on re-runs.
+        Filters out rows that already exist (by symbol + fiscal_year +
+        fiscal_quarter) to prevent duplicate key violations on re-runs.
 
         Args:
-            df: Financials DataFrame with columns: symbol, fiscal_date,
-                total_assets, total_equity, total_debt, net_income,
-                eps, book_value, shares_outstanding.
+            df: Financials DataFrame with columns: symbol, fiscal_year,
+                fiscal_quarter, report_date, currency, total_assets,
+                total_equity, total_debt, book_value_equity,
+                shares_outstanding, net_income, eps, source.
 
         Returns:
             int: Number of new rows written.
@@ -111,17 +112,22 @@ class DataWriter:
             return 0
 
         df = df.copy()
-        df["fiscal_date"] = pd.to_datetime(df["fiscal_date"])
 
-        existing = self._get_existing_keys(
-            "financials", "symbol", "fiscal_date"
-        )
+        # 3-column unique key: symbol + fiscal_year + fiscal_quarter
+        try:
+            query = (
+                f"SELECT symbol, fiscal_year, fiscal_quarter "
+                f"FROM {SCHEMA}.financial_data"
+            )
+            existing = self.pg.read_query(query)
+        except Exception as e:
+            logger.warning("Could not read existing financials keys: %s", e)
+            existing = pd.DataFrame()
 
         before = len(df)
         if existing is not None and not existing.empty:
-            existing["fiscal_date"] = pd.to_datetime(existing["fiscal_date"])
             merged = df.merge(
-                existing, on=["symbol", "fiscal_date"],
+                existing, on=["symbol", "fiscal_year", "fiscal_quarter"],
                 how="left", indicator=True,
             )
             df = merged[merged["_merge"] == "left_only"].drop(
@@ -137,7 +143,7 @@ class DataWriter:
             logger.info("Financials: no new rows to write.")
             return 0
 
-        self.pg.write_dataframe(df, "financials", SCHEMA)
+        self.pg.write_dataframe(df, "financial_data", SCHEMA)
         logger.info("Financials: wrote %d new rows to PostgreSQL", new_rows)
 
         if self.fetcher:
@@ -198,14 +204,13 @@ class DataWriter:
         return new_rows
 
     def write_factor_metrics(self, df):
-        """Write calculated factor metrics to PostgreSQL.
+        """Write raw factor metrics to PostgreSQL.
 
         Args:
             df: Metrics DataFrame with columns: symbol, calc_date,
-                pb_ratio, asset_growth, roe, leverage,
+                pb_ratio, asset_growth, roe, roa, leverage,
                 earnings_stability, momentum_6m, momentum_12m,
-                volatility_3m, volatility_12m, z_value, z_quality,
-                z_momentum, z_low_vol, composite_score.
+                volatility_3m, volatility_12m.
 
         Returns:
             int: Number of new rows written.
@@ -238,6 +243,47 @@ class DataWriter:
 
         self.pg.write_dataframe(df, "factor_metrics", SCHEMA)
         logger.info("Factor metrics: wrote %d new rows", new_rows)
+        return new_rows
+
+    def write_factor_scores(self, df):
+        """Write sector-normalised factor z-scores to PostgreSQL.
+
+        Args:
+            df: Scores DataFrame with columns: symbol, score_date,
+                z_value, z_quality, z_momentum, z_low_vol,
+                composite_score.
+
+        Returns:
+            int: Number of new rows written.
+        """
+        if df is None or df.empty:
+            logger.warning("No factor scores to write.")
+            return 0
+
+        df = df.copy()
+        df["score_date"] = pd.to_datetime(df["score_date"])
+
+        existing = self._get_existing_keys(
+            "factor_scores", "symbol", "score_date"
+        )
+
+        if existing is not None and not existing.empty:
+            existing["score_date"] = pd.to_datetime(existing["score_date"])
+            merged = df.merge(
+                existing, on=["symbol", "score_date"],
+                how="left", indicator=True,
+            )
+            df = merged[merged["_merge"] == "left_only"].drop(
+                columns=["_merge"]
+            )
+
+        new_rows = len(df)
+        if new_rows == 0:
+            logger.info("Factor scores: no new rows to write.")
+            return 0
+
+        self.pg.write_dataframe(df, "factor_scores", SCHEMA)
+        logger.info("Factor scores: wrote %d new rows", new_rows)
         return new_rows
 
     def _get_existing_keys(self, table, key_col1, key_col2):
@@ -330,8 +376,8 @@ class DataWriter:
             dict: Mapping of table name to row count.
         """
         tables = [
-            "daily_prices", "financials", "risk_free_rates",
-            "factor_metrics", "long_short_positions",
+            "price_data", "financial_data", "risk_free_rates",
+            "factor_metrics", "factor_scores", "portfolio_positions",
         ]
         counts = {}
         for table in tables:

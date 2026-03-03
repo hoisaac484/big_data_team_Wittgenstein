@@ -130,8 +130,8 @@ class DataValidator:
                     )
 
         # Check date range
-        if "price_date" in df.columns:
-            df_dates = pd.to_datetime(df["price_date"])
+        if "trade_date" in df.columns:
+            df_dates = pd.to_datetime(df["trade_date"])
             date_min = df_dates.min()
             date_max = df_dates.max()
             date_span_years = (date_max - date_min).days / 365.25
@@ -158,9 +158,9 @@ class DataValidator:
         result.stats["median_rows_per_symbol"] = int(rows_per_symbol.median())
 
         # Check for duplicates
-        dupes = df.duplicated(subset=["symbol", "price_date"]).sum()
+        dupes = df.duplicated(subset=["symbol", "trade_date"]).sum()
         if dupes > 0:
-            result.add_error(f"{dupes} duplicate (symbol, price_date) rows")
+            result.add_error(f"{dupes} duplicate (symbol, trade_date) rows")
 
         # Check null rate on close_price
         if "close_price" in df.columns:
@@ -231,10 +231,12 @@ class DataValidator:
                     )
 
         # Check for duplicates
-        dupes = df.duplicated(subset=["symbol", "fiscal_date"]).sum()
+        dupes = df.duplicated(
+            subset=["symbol", "fiscal_year", "fiscal_quarter"]
+        ).sum()
         if dupes > 0:
             result.add_error(
-                f"{dupes} duplicate (symbol, fiscal_date) rows"
+                f"{dupes} duplicate (symbol, fiscal_year, fiscal_quarter) rows"
             )
 
         # Check null rates on critical columns
