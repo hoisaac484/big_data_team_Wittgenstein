@@ -190,9 +190,8 @@ class DataFetcher:
                 self.bucket, self._ctl_path(data_type, name), ctl
             )
 
-    # ================================================================
+   
     # Price data (source: Yahoo Finance)
-    # ================================================================
 
     def fetch_prices(self, symbols, period="5y"):
         """Fetch daily price data for all symbols.
@@ -303,26 +302,25 @@ class DataFetcher:
         df = raw_df.reset_index()
 
         column_map = {
-            "Date": "price_date",
+            "Date": "trade_date",
             "Open": "open_price",
             "High": "high_price",
             "Low": "low_price",
             "Close": "close_price",
-            "Adj Close": "adj_close",
+            "Adj Close": "adjusted_close",
             "Volume": "volume",
         }
         df = df.rename(columns=column_map)
         df["symbol"] = symbol
+        df["source"] = "yfinance"
 
         keep = [
-            "symbol", "price_date", "open_price", "high_price",
-            "low_price", "close_price", "adj_close", "volume",
+            "symbol", "trade_date", "open_price", "high_price",
+            "low_price", "close_price", "adjusted_close", "volume", "source",
         ]
         return df[[c for c in keep if c in df.columns]]
 
-    # ================================================================
     # Fundamentals (source: Yahoo Finance)
-    # ================================================================
 
     def fetch_fundamentals(self, symbols, max_workers=10):
         """Fetch quarterly financial statements for all symbols.
@@ -438,9 +436,14 @@ class DataFetcher:
 
         records = []
         for date_col in bs.columns:
+            ts = pd.Timestamp(date_col)
+            quarter = (ts.month - 1) // 3 + 1
             record = {
                 "symbol": symbol,
-                "fiscal_date": pd.Timestamp(date_col).date(),
+                "fiscal_year": ts.year,
+                "fiscal_quarter": quarter,
+                "report_date": ts.date(),
+                "currency": info.get("currency"),
                 "total_assets": self._safe_get(bs, "Total Assets", date_col),
                 "total_equity": (
                     self._safe_get(bs, "Stockholders Equity", date_col)
@@ -452,8 +455,9 @@ class DataFetcher:
                     self._safe_get(bs, "Total Debt", date_col)
                     or self._safe_get(bs, "Long Term Debt", date_col)
                 ),
-                "book_value": info.get("bookValue"),
+                "book_value_equity": info.get("bookValue"),
                 "shares_outstanding": info.get("sharesOutstanding"),
+                "source": "yfinance",
             }
 
             if inc is not None and date_col in inc.columns:
@@ -471,7 +475,7 @@ class DataFetcher:
             return None
 
         df = pd.DataFrame(records)
-        df["fiscal_date"] = pd.to_datetime(df["fiscal_date"])
+        df["report_date"] = pd.to_datetime(df["report_date"])
         return df
 
     @staticmethod
@@ -494,9 +498,8 @@ class DataFetcher:
         except (KeyError, TypeError, ValueError):
             return None
 
-    # ================================================================
+    
     # Risk-free rates (source: OECD API with yfinance fallback)
-    # ================================================================
 
     def fetch_risk_free_rates(self, countries):
         """Fetch monthly short-term interest rates for risk-free rate proxy.

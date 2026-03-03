@@ -34,9 +34,7 @@ class DataWriter:
         self.mongo = mongo_conn
         self.fetcher = fetcher
 
-    # ================================================================
     # PostgreSQL writers
-    # ================================================================
 
     def write_prices(self, df):
         """Write daily price data to PostgreSQL.
@@ -265,9 +263,7 @@ class DataWriter:
             )
             return pd.DataFrame()
 
-    # ================================================================
     # MongoDB writers (audit trail)
-    # ================================================================
 
     def log_fetch_to_mongo(self, data_type, symbol, raw_data):
         """Store a raw API response in MongoDB for auditing.
@@ -325,9 +321,7 @@ class DataWriter:
             data_type, df["symbol"].nunique(),
         )
 
-    # ================================================================
     # Pipeline summary
-    # ================================================================
 
     def get_table_counts(self):
         """Get current row counts for all team tables.
@@ -349,3 +343,5 @@ class DataWriter:
             except Exception:
                 counts[table] = 0
         return counts
+    
+    
