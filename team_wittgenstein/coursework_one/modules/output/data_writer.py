@@ -112,6 +112,17 @@ class DataWriter:
             return 0
 
         df = df.copy()
+        before_incoming_dedupe = len(df)
+        df = df.drop_duplicates(
+            subset=["symbol", "fiscal_year", "fiscal_quarter"],
+            keep="last",
+        )
+        incoming_dupes = before_incoming_dedupe - len(df)
+        if incoming_dupes > 0:
+            logger.info(
+                "Financials: dropped %d duplicate incoming rows by key",
+                incoming_dupes,
+            )
 
         # 3-column unique key: symbol + fiscal_year + fiscal_quarter
         try:
@@ -143,7 +154,12 @@ class DataWriter:
             logger.info("Financials: no new rows to write.")
             return 0
 
-        self.pg.write_dataframe(df, "financial_data", SCHEMA)
+        self.pg.write_dataframe_on_conflict_do_nothing(
+            df,
+            "financial_data",
+            SCHEMA,
+            ["symbol", "fiscal_year", "fiscal_quarter"],
+        )
         logger.info("Financials: wrote %d new rows to PostgreSQL", new_rows)
 
         if self.fetcher:

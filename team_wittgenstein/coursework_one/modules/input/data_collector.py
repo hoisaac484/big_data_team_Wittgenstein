@@ -147,6 +147,44 @@ class DataFetcher:
             )
         )
 
+    def _dedupe_dataframe(self, data_type, df, name=None):
+        """Drop duplicate business keys for a dataframe type.
+
+        Args:
+            data_type: Category of data.
+            df: DataFrame to deduplicate.
+            name: Optional identifier used in logs.
+
+        Returns:
+            pd.DataFrame: Deduplicated dataframe copy.
+        """
+        if df is None or df.empty:
+            return df
+
+        df = df.copy()
+        if data_type == "prices":
+            subset = ["symbol", "trade_date"]
+        elif data_type == "fundamentals":
+            subset = ["symbol", "fiscal_year", "fiscal_quarter"]
+        elif data_type == "risk_free_rates":
+            subset = ["country", "rate_date"]
+        else:
+            subset = None
+
+        if subset and all(col in df.columns for col in subset):
+            before = len(df)
+            df = df.drop_duplicates(subset=subset, keep="last")
+            dropped = before - len(df)
+            if dropped > 0:
+                target = f"{data_type}/{name}" if name else data_type
+                logger.info(
+                    "Dedupe %s: dropped %d duplicate rows by key %s",
+                    target,
+                    dropped,
+                    subset,
+                )
+        return df
+
     def _cache_dataframe(self, data_type, name, df, source):
         """Save a DataFrame as parquet with a companion CTL file.
 
@@ -156,6 +194,9 @@ class DataFetcher:
             df: DataFrame to cache.
             source: Data source name.
         """
+        # Ensure cache file never stores duplicate business keys.
+        df = self._dedupe_dataframe(data_type, df, name=name)
+
         self.minio.upload_dataframe(
             self.bucket, self._parquet_path(data_type, name), df
         )
@@ -217,6 +258,7 @@ class DataFetcher:
             if self._is_cached("prices", sym):
                 df = self._load_cached("prices", sym)
                 if df is not None:
+                    df = self._dedupe_dataframe("prices", df, name=sym)
                     cached_dfs.append(df)
                     continue
             uncached.append(sym)
@@ -263,6 +305,7 @@ class DataFetcher:
             symbol = symbols[0]
             df = self._reshape_price_df(raw, symbol)
             if df is not None and not df.empty:
+                df = self._dedupe_dataframe("prices", df, name=symbol)
                 self._cache_dataframe("prices", symbol, df, "yfinance")
                 result_dfs.append(df)
         else:
@@ -271,6 +314,7 @@ class DataFetcher:
                     symbol_data = raw[symbol].dropna(how="all")
                     df = self._reshape_price_df(symbol_data, symbol)
                     if df is not None and not df.empty:
+                        df = self._dedupe_dataframe("prices", df, name=symbol)
                         self._cache_dataframe(
                             "prices", symbol, df, "yfinance"
                         )
@@ -350,6 +394,7 @@ class DataFetcher:
             if self._is_cached("fundamentals", sym):
                 df = self._load_cached("fundamentals", sym)
                 if df is not None:
+                    df = self._dedupe_dataframe("fundamentals", df, name=sym)
                     cached_dfs.append(df)
                     continue
             uncached.append(sym)
@@ -396,6 +441,9 @@ class DataFetcher:
                 try:
                     df = future.result()
                     if df is not None and not df.empty:
+                        df = self._dedupe_dataframe(
+                            "fundamentals", df, name=symbol
+                        )
                         self._cache_dataframe(
                             "fundamentals", symbol, df, "yfinance"
                         )
@@ -521,7 +569,8 @@ class DataFetcher:
         """
         if self._is_cached("risk_free_rates", "all"):
             logger.info("Risk-free rates loaded from cache.")
-            return self._load_cached("risk_free_rates", "all")
+            cached = self._load_cached("risk_free_rates", "all")
+            return self._dedupe_dataframe("risk_free_rates", cached, name="all")
 
         unique_countries = list(set(c.strip() for c in countries))
 
@@ -534,6 +583,9 @@ class DataFetcher:
             result = self._fetch_rates_yfinance(unique_countries)
 
         if result is not None and not result.empty:
+            result = self._dedupe_dataframe(
+                "risk_free_rates", result, name="all"
+            )
             self._cache_dataframe("risk_free_rates", "all", result, "oecd")
             logger.info("Fetched risk-free rates: %d rows", len(result))
             return result

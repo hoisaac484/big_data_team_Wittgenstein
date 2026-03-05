@@ -12,7 +12,8 @@ import pandas as pd
 from minio import Minio
 from minio.error import S3Error
 from pymongo import MongoClient
-from sqlalchemy import create_engine, text
+from sqlalchemy import MetaData, Table, create_engine, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 import re
 from pathlib import Path
 
@@ -80,6 +81,40 @@ class PostgresConnection:
         )
         logger.info(
             "Wrote %d rows to %s.%s", len(df), schema, table_name
+        )
+
+    def write_dataframe_on_conflict_do_nothing(
+        self, df, table_name, schema, conflict_columns
+    ):
+        """Write rows to PostgreSQL using ON CONFLICT DO NOTHING.
+
+        Args:
+            df: DataFrame to write.
+            table_name: Target table name.
+            schema: Target schema name.
+            conflict_columns: Columns defining the conflict target.
+        """
+        if df is None or df.empty:
+            return
+
+        table = Table(
+            table_name,
+            MetaData(),
+            schema=schema,
+            autoload_with=self.engine,
+        )
+        records = df.to_dict(orient="records")
+        stmt = pg_insert(table).values(records)
+        stmt = stmt.on_conflict_do_nothing(index_elements=conflict_columns)
+
+        with self.engine.begin() as conn:
+            conn.execute(stmt)
+
+        logger.info(
+            "Attempted to write %d rows to %s.%s (ON CONFLICT DO NOTHING)",
+            len(df),
+            schema,
+            table_name,
         )
 
     def get_company_list(self):

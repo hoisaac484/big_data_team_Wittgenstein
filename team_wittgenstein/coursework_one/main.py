@@ -121,10 +121,10 @@ def main():
     # This is not truly "raw API response" because you log the processed DataFrames,
     # but it still gives you an audit trail per symbol.
     writer = DataWriter(pg_conn=pg, mongo_conn=mongo, fetcher=fetcher)
-    writer.log_batch_to_mongo("prices", prices_df)
-    writer.log_batch_to_mongo("fundamentals", fin_df)
-    if rates_df is not None and not rates_df.empty:
-        writer.log_fetch_to_mongo("rates", "all", rates_df)
+    # writer.log_batch_to_mongo("prices", prices_df)
+    # writer.log_batch_to_mongo("fundamentals", fin_df)
+    # if rates_df is not None and not rates_df.empty:
+    #     writer.log_fetch_to_mongo("rates", "all", rates_df)
 
     # ---- Validate ----------------------------------------------------
     vcfg = cfg.get("validation", {})
