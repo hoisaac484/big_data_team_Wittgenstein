@@ -17,6 +17,7 @@ pyyaml = "^6.0"
 yfinance = "^0.2"
 requests = "^2.31"
 pyarrow = "^23.0.1"
+python-dotenv = "^1.2.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"

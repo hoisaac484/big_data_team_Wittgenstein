@@ -11,16 +11,22 @@ CTL Pattern:
 """
 
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from threading import Lock
+from time import monotonic, sleep
 
 import pandas as pd
 import requests
 import yfinance as yf
+from dotenv import load_dotenv
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
 BUCKET = "wittgenstein-cache"
+ALPHA_VANTAGE_BASE_URL = "https://www.alphavantage.co/query"
 
 # Map country codes (from company_static) to OECD 3-letter codes
 COUNTRY_TO_OECD = {
@@ -63,6 +69,15 @@ class DataFetcher:
     def __init__(self, minio_conn):
         self.minio = minio_conn
         self.bucket = BUCKET
+        self.alpha_vantage_api_key = (
+            os.getenv("ALPHA_VANTAGE_API_KEY")
+            or os.getenv("ALPHAVANTAGE_API_KEY")
+        )
+        self._av_min_interval_seconds = float(
+            os.getenv("ALPHA_VANTAGE_MIN_INTERVAL_SECONDS", "1.1")
+        )
+        self._av_last_request_ts = 0.0
+        self._av_rate_limit_lock = Lock()
         self.minio._ensure_bucket(self.bucket)
 
     # ================================================================
@@ -369,24 +384,28 @@ class DataFetcher:
         ]
         return df[[c for c in keep if c in df.columns]]
 
-    # Fundamentals (source: Yahoo Finance)
+    # Fundamentals (source: Alpha Vantage only)
 
-    def fetch_fundamentals(self, symbols, max_workers=10):
+    def fetch_fundamentals(self, symbols, max_workers=10, target_quarters=20):
         """Fetch quarterly financial statements for all symbols.
 
-        Uses ThreadPoolExecutor for parallel fetching. Caches per-symbol
-        parquet files in MinIO.
+        Uses Alpha Vantage only. For each symbol, calls BALANCE_SHEET,
+        INCOME_STATEMENT, and EARNINGS in sequence.
+        Per-symbol parquet files are cached in MinIO.
 
         Args:
             symbols: List of stock ticker symbols.
-            max_workers: Number of parallel download threads.
+            max_workers: Kept for compatibility; fundamentals are fetched
+                sequentially to respect API throttling.
+            target_quarters: Number of recent quarters to keep per symbol.
 
         Returns:
             pd.DataFrame: Combined financial data with columns: symbol,
-                fiscal_date, total_assets, total_equity, total_debt,
-                net_income, eps, book_value, shares_outstanding.
+                fiscal_year, fiscal_quarter, report_date, total_assets,
+                total_equity, total_debt, net_income, eps, book_value_equity,
+                shares_outstanding.
         """
-        uncached = []
+        to_refresh = []
         cached_dfs = []
 
         for symbol in symbols:
@@ -394,67 +413,90 @@ class DataFetcher:
             if self._is_cached("fundamentals", sym):
                 df = self._load_cached("fundamentals", sym)
                 if df is not None:
+                    df = self._ensure_fundamentals_schema(df)
                     df = self._dedupe_dataframe("fundamentals", df, name=sym)
-                    cached_dfs.append(df)
+                    source_series = df.get("source", pd.Series(dtype=object))
+                    source_series = source_series.dropna().astype(str).str.lower()
+                    has_non_alpha_source = (
+                        source_series.empty
+                        or source_series.ne("alphavantage").any()
+                    )
+                    needs_refresh = (
+                        len(df) < target_quarters
+                        or (
+                            bool(self.alpha_vantage_api_key)
+                            and self._has_fundamental_gaps(df)
+                        )
+                        or has_non_alpha_source
+                    )
+                    if needs_refresh:
+                        to_refresh.append(sym)
+                    else:
+                        cached_dfs.append(
+                            df.sort_values("report_date", ascending=False).head(
+                                target_quarters
+                            )
+                        )
                     continue
-            uncached.append(sym)
+            to_refresh.append(sym)
 
         logger.info(
-            "Fundamentals: %d cached, %d to fetch",
-            len(cached_dfs), len(uncached),
+            "Fundamentals: %d cache-ready, %d to fetch/refresh",
+            len(cached_dfs), len(to_refresh),
         )
 
-        if uncached:
-            fetched = self._parallel_fetch_fundamentals(uncached, max_workers)
+        if to_refresh:
+            fetched = self._parallel_fetch_fundamentals(
+                to_refresh, max_workers, target_quarters
+            )
             cached_dfs.extend(fetched)
 
         if not cached_dfs:
             return pd.DataFrame()
 
-        return pd.concat(cached_dfs, ignore_index=True)
+        out = pd.concat(cached_dfs, ignore_index=True)
+        out = self._ensure_fundamentals_schema(out)
+        out = self._dedupe_dataframe("fundamentals", out)
+        return out
 
-    def _parallel_fetch_fundamentals(self, symbols, max_workers):
-        """Fetch fundamentals in parallel using ThreadPoolExecutor.
+    def _parallel_fetch_fundamentals(self, symbols, max_workers, target_quarters):
+        """Fetch fundamentals sequentially to respect API throttling.
 
         Args:
             symbols: Symbols to fetch.
-            max_workers: Thread count.
+            max_workers: Unused for fundamentals; kept for compatibility.
+            target_quarters: Number of recent quarters to retain.
 
         Returns:
             list[pd.DataFrame]
         """
         logger.info(
-            "Fetching fundamentals for %d symbols (%d workers)...",
-            len(symbols), max_workers,
+            "Fetching fundamentals for %d symbols sequentially "
+            "(alpha vantage throttle-safe).",
+            len(symbols),
         )
 
         result_dfs = []
         failed = []
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(self._fetch_single_fundamental, sym): sym
-                for sym in symbols
-            }
-            for future in as_completed(futures):
-                symbol = futures[future]
-                try:
-                    df = future.result()
-                    if df is not None and not df.empty:
-                        df = self._dedupe_dataframe(
-                            "fundamentals", df, name=symbol
-                        )
-                        self._cache_dataframe(
-                            "fundamentals", symbol, df, "yfinance"
-                        )
-                        result_dfs.append(df)
-                    else:
-                        failed.append(symbol)
-                except Exception as e:
-                    logger.error(
-                        "Failed fundamentals for %s: %s", symbol, e
+        for symbol in symbols:
+            try:
+                df = self._fetch_single_fundamental(symbol, target_quarters)
+                if df is not None and not df.empty:
+                    df = self._ensure_fundamentals_schema(df)
+                    df = self._dedupe_dataframe("fundamentals", df, name=symbol)
+                    cache_source = ",".join(
+                        sorted(df["source"].dropna().astype(str).unique())
+                    ) or "unknown"
+                    self._cache_dataframe(
+                        "fundamentals", symbol, df, cache_source
                     )
+                    result_dfs.append(df)
+                else:
                     failed.append(symbol)
+            except Exception as e:
+                logger.error("Failed fundamentals for %s: %s", symbol, e)
+                failed.append(symbol)
 
         logger.info(
             "Fundamentals: %d success, %d failed",
@@ -465,18 +507,27 @@ class DataFetcher:
 
         return result_dfs
 
-    def _fetch_single_fundamental(self, symbol):
-        """Fetch financial statements for one symbol from yfinance.
-
-        Extracts balance sheet, income statement, and company info
-        to build a single DataFrame of quarterly financial records.
+    def _fetch_single_fundamental(self, symbol, target_quarters=20):
+        """Fetch one symbol from Alpha Vantage only.
 
         Args:
             symbol: Stock ticker symbol.
+            target_quarters: Number of recent quarters to return.
 
         Returns:
             pd.DataFrame or None.
         """
+        av_df = self._fetch_alpha_vantage_fundamentals(symbol)
+
+        if av_df is None or av_df.empty:
+            return None
+
+        df = self._ensure_fundamentals_schema(av_df)
+        df = df.sort_values("report_date", ascending=False).head(target_quarters)
+        return df.reset_index(drop=True)
+
+    def _fetch_yfinance_fundamentals(self, symbol):
+        """Fetch quarterly financial statements for one symbol from yfinance."""
         ticker = yf.Ticker(symbol)
 
         bs = ticker.quarterly_balance_sheet
@@ -525,11 +576,328 @@ class DataFetcher:
             records.append(record)
 
         if not records:
-            return None
+            return pd.DataFrame()
 
         df = pd.DataFrame(records)
         df["report_date"] = pd.to_datetime(df["report_date"])
+        df = df.sort_values("report_date", ascending=False).reset_index(drop=True)
         return df
+
+    def _fetch_alpha_vantage_fundamentals(self, symbol):
+        """Fetch quarterly balance sheet + income + earnings data from AV."""
+        if not self.alpha_vantage_api_key:
+            return pd.DataFrame()
+
+        bs_payload = self._alpha_vantage_get("BALANCE_SHEET", symbol)
+        inc_payload = self._alpha_vantage_get("INCOME_STATEMENT", symbol)
+        earnings_payload = self._alpha_vantage_get("EARNINGS", symbol)
+
+        if not any([bs_payload, inc_payload, earnings_payload]):
+            return pd.DataFrame()
+
+        rows = {}
+
+        bs_reports = (bs_payload or {}).get("quarterlyReports", [])
+        for report in bs_reports:
+            fiscal_date = report.get("fiscalDateEnding")
+            if not fiscal_date:
+                continue
+            key = pd.Timestamp(fiscal_date)
+            short_long_debt = self._to_float(report.get("shortLongTermDebtTotal"))
+            long_term_debt = self._to_float(report.get("longTermDebt"))
+            derived_debt = None
+            if short_long_debt is not None or long_term_debt is not None:
+                derived_debt = (short_long_debt or 0.0) + (long_term_debt or 0.0)
+            total_debt = self._coalesce_numeric(
+                report.get("totalDebt"),
+                derived_debt,
+            )
+            shares = self._to_float(report.get("commonStockSharesOutstanding"))
+            rows[key] = {
+                "symbol": symbol,
+                "fiscal_year": key.year,
+                "fiscal_quarter": int(key.quarter),
+                "report_date": key,
+                "currency": report.get("reportedCurrency"),
+                "total_assets": self._to_float(report.get("totalAssets")),
+                "total_equity": self._to_float(
+                    report.get("totalShareholderEquity")
+                ),
+                "total_debt": total_debt,
+                "book_value_equity": None,
+                "shares_outstanding": shares,
+                "net_income": None,
+                "eps": None,
+                "source": "alphavantage",
+            }
+
+        inc_reports = (inc_payload or {}).get("quarterlyReports", [])
+        for report in inc_reports:
+            fiscal_date = report.get("fiscalDateEnding")
+            if not fiscal_date:
+                continue
+            key = pd.Timestamp(fiscal_date)
+            if key not in rows:
+                rows[key] = {
+                    "symbol": symbol,
+                    "fiscal_year": key.year,
+                    "fiscal_quarter": int(key.quarter),
+                    "report_date": key,
+                    "currency": report.get("reportedCurrency"),
+                    "total_assets": None,
+                    "total_equity": None,
+                    "total_debt": None,
+                    "book_value_equity": None,
+                    "shares_outstanding": None,
+                    "net_income": None,
+                    "eps": None,
+                    "source": "alphavantage",
+                }
+            rows[key]["net_income"] = self._to_float(report.get("netIncome"))
+            rows[key]["eps"] = self._coalesce_numeric(
+                report.get("reportedEPS"),
+                report.get("dilutedEPS"),
+            )
+
+        earnings_rows = (earnings_payload or {}).get("quarterlyEarnings", [])
+        for report in earnings_rows:
+            fiscal_date = report.get("fiscalDateEnding")
+            if not fiscal_date:
+                continue
+            key = pd.Timestamp(fiscal_date)
+            if key not in rows:
+                rows[key] = {
+                    "symbol": symbol,
+                    "fiscal_year": key.year,
+                    "fiscal_quarter": int(key.quarter),
+                    "report_date": key,
+                    "currency": None,
+                    "total_assets": None,
+                    "total_equity": None,
+                    "total_debt": None,
+                    "book_value_equity": None,
+                    "shares_outstanding": None,
+                    "net_income": None,
+                    "eps": None,
+                    "source": "alphavantage",
+                }
+            if rows[key].get("eps") is None:
+                rows[key]["eps"] = self._to_float(report.get("reportedEPS"))
+
+        if not rows:
+            return pd.DataFrame()
+
+        df = pd.DataFrame(list(rows.values()))
+
+        # If book value/share is missing, compute as equity / shares.
+        can_compute = (
+            df["book_value_equity"].isna()
+            & df["total_equity"].notna()
+            & df["shares_outstanding"].notna()
+            & (df["shares_outstanding"] > 0)
+        )
+        df.loc[can_compute, "book_value_equity"] = (
+            df.loc[can_compute, "total_equity"]
+            / df.loc[can_compute, "shares_outstanding"]
+        )
+        df["report_date"] = pd.to_datetime(df["report_date"])
+        return df.sort_values("report_date", ascending=False).reset_index(drop=True)
+
+    def _merge_fundamentals_sources(
+        self, symbol, yf_df, av_df, target_quarters=20
+    ):
+        """Blend yfinance (primary) with Alpha Vantage backfill/top-up."""
+        yf_df = self._ensure_fundamentals_schema(yf_df)
+        av_df = self._ensure_fundamentals_schema(av_df)
+
+        if yf_df.empty and av_df.empty:
+            return pd.DataFrame()
+
+        if yf_df.empty:
+            merged = av_df.copy()
+            merged = merged.sort_values("report_date", ascending=False)
+            return merged.head(target_quarters).reset_index(drop=True)
+
+        if av_df.empty:
+            merged = yf_df.copy()
+            merged = merged.sort_values("report_date", ascending=False)
+            return merged.head(target_quarters).reset_index(drop=True)
+
+        key_cols = ["fiscal_year", "fiscal_quarter"]
+        fill_cols = [
+            "report_date",
+            "currency",
+            "total_assets",
+            "total_equity",
+            "total_debt",
+            "book_value_equity",
+            "shares_outstanding",
+            "net_income",
+            "eps",
+        ]
+
+        yf = yf_df.copy().sort_values("report_date", ascending=False)
+        av = av_df.copy().sort_values("report_date", ascending=False)
+
+        yf = yf.drop_duplicates(subset=key_cols, keep="first").set_index(key_cols)
+        av = av.drop_duplicates(subset=key_cols, keep="first").set_index(key_cols)
+        av_aligned = av.reindex(yf.index)
+
+        na_before = yf[fill_cols].isna()
+
+        for col in fill_cols:
+            yf[col] = yf[col].where(yf[col].notna(), av_aligned[col])
+
+        filled_mask = (na_before & yf[fill_cols].notna()).any(axis=1)
+        yf.loc[filled_mask, "source"] = "yfinance+alphavantage"
+        yf.loc[~filled_mask, "source"] = yf.loc[~filled_mask, "source"].fillna(
+            "yfinance"
+        )
+        yf["symbol"] = symbol
+
+        av_only = av.loc[~av.index.isin(yf.index)].copy()
+        if not av_only.empty:
+            av_only["source"] = "alphavantage"
+            av_only["symbol"] = symbol
+
+        combined = pd.concat([yf, av_only], axis=0).reset_index()
+        combined = self._ensure_fundamentals_schema(combined)
+        combined = combined.sort_values("report_date", ascending=False)
+        combined = combined.drop_duplicates(subset=["symbol"] + key_cols, keep="first")
+        return combined.head(target_quarters).reset_index(drop=True)
+
+    def _alpha_vantage_get(self, function_name, symbol, max_retries=3):
+        """Call Alpha Vantage API with basic retry for rate limits."""
+        params = {
+            "function": function_name,
+            "symbol": symbol,
+            "apikey": self.alpha_vantage_api_key,
+        }
+
+        for attempt in range(max_retries):
+            try:
+                self._alpha_vantage_throttle_wait()
+                response = requests.get(
+                    ALPHA_VANTAGE_BASE_URL, params=params, timeout=20
+                )
+                response.raise_for_status()
+                payload = response.json()
+            except requests.RequestException as exc:
+                logger.warning(
+                    "Alpha Vantage request failed for %s (%s): %s",
+                    symbol,
+                    function_name,
+                    exc,
+                )
+                sleep(1.5 * (attempt + 1))
+                continue
+
+            if "Error Message" in payload:
+                logger.warning(
+                    "Alpha Vantage error for %s (%s): %s",
+                    symbol,
+                    function_name,
+                    payload["Error Message"],
+                )
+                return None
+
+            if "Note" in payload:
+                logger.warning(
+                    "Alpha Vantage rate limit hit for %s (%s), retrying...",
+                    symbol,
+                    function_name,
+                )
+                sleep(12 * (attempt + 1))
+                continue
+
+            return payload
+
+        logger.warning(
+            "Alpha Vantage unavailable for %s (%s) after retries",
+            symbol,
+            function_name,
+        )
+        return None
+
+    def _alpha_vantage_throttle_wait(self):
+        """Ensure minimum spacing between Alpha Vantage API calls."""
+        with self._av_rate_limit_lock:
+            elapsed = monotonic() - self._av_last_request_ts
+            if elapsed < self._av_min_interval_seconds:
+                sleep(self._av_min_interval_seconds - elapsed)
+            self._av_last_request_ts = monotonic()
+
+    @staticmethod
+    def _to_float(value):
+        """Parse API numeric values safely."""
+        if value in (None, "", "None", "null"):
+            return None
+        try:
+            return float(str(value).replace(",", ""))
+        except (TypeError, ValueError):
+            return None
+
+    def _coalesce_numeric(self, *values):
+        """Return first successfully parsed numeric value."""
+        for value in values:
+            parsed = self._to_float(value)
+            if parsed is not None:
+                return parsed
+        return None
+
+    @staticmethod
+    def _has_fundamental_gaps(df):
+        """Check whether critical financial fields contain nulls."""
+        critical_cols = [
+            "total_assets",
+            "total_equity",
+            "total_debt",
+            "net_income",
+            "eps",
+        ]
+        available = [c for c in critical_cols if c in df.columns]
+        if not available:
+            return True
+        return df[available].isna().any().any()
+
+    @staticmethod
+    def _ensure_fundamentals_schema(df):
+        """Ensure fundamentals DataFrame conforms to expected output schema."""
+        columns = [
+            "symbol",
+            "fiscal_year",
+            "fiscal_quarter",
+            "report_date",
+            "currency",
+            "total_assets",
+            "total_equity",
+            "total_debt",
+            "book_value_equity",
+            "shares_outstanding",
+            "net_income",
+            "eps",
+            "source",
+        ]
+        if df is None or df.empty:
+            return pd.DataFrame(columns=columns)
+
+        out = df.copy()
+        for col in columns:
+            if col not in out.columns:
+                out[col] = None
+
+        out["report_date"] = pd.to_datetime(out["report_date"], errors="coerce")
+        out["fiscal_year"] = pd.to_numeric(
+            out["fiscal_year"], errors="coerce"
+        ).astype("Int64")
+        out["fiscal_quarter"] = pd.to_numeric(
+            out["fiscal_quarter"], errors="coerce"
+        ).astype("Int64")
+        out["shares_outstanding"] = pd.to_numeric(
+            out["shares_outstanding"], errors="coerce"
+        ).round().astype("Int64")
+        out["source"] = out["source"].fillna("unknown")
+        return out[columns]
 
     @staticmethod
     def _safe_get(df, row_label, col_label):

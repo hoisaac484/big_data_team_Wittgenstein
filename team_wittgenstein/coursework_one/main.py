@@ -114,7 +114,13 @@ def main():
     fetcher = DataFetcher(minio)
 
     prices_df = fetcher.fetch_prices(symbols, period=cfg.get("data", {}).get("price_period", "5y"))
-    fin_df = fetcher.fetch_fundamentals(symbols, max_workers=cfg.get("data", {}).get("fundamentals_workers", 10))
+    fin_df = fetcher.fetch_fundamentals(
+        symbols,
+        max_workers=cfg.get("data", {}).get("fundamentals_workers", 10),
+        target_quarters=cfg.get("data", {}).get(
+            "target_fundamental_quarters", 20
+        ),
+    )
     rates_df = fetcher.fetch_risk_free_rates(countries)
 
     # ---- Optional: audit to Mongo (raw-ish) --------------------------

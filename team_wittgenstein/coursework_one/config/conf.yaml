@@ -14,3 +14,8 @@ minio:
   access_key: "ift_bigdata"
   secret_key: "minio_password"
   secure: false
+
+data:
+  price_period: "5y"
+  fundamentals_workers: 10
+  target_fundamental_quarters: 20
