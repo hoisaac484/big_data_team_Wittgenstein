@@ -21,6 +21,7 @@ pyarrow = "^23.0.1"
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"
 pytest-cov = "^6.0"
+pytest-mock = "^3.0"
 flake8 = "^7.0"
 black = "^24.0"
 sphinx = "^7.0"
@@ -29,7 +30,8 @@ sphinx = "^7.0"
 line-length = 88
 
 [tool.pytest.ini_options]
-testpaths = ["test"]
+testpaths = ["tests"]
+addopts = "--cov=modules --cov-report=term-missing"
 
 [build-system]
 requires = ["poetry-core"]
