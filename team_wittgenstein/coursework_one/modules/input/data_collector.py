@@ -12,7 +12,6 @@ CTL Pattern:
 
 import logging
 import os
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from threading import Lock
 from time import monotonic, sleep
@@ -27,7 +26,17 @@ logger = logging.getLogger(__name__)
 
 BUCKET = "wittgenstein-cache"
 ALPHA_VANTAGE_BASE_URL = "https://www.alphavantage.co/query"
-FUNDAMENTALS_PERIODS = {"quarter", "annual"}
+SIMFIN_STATEMENTS_URL = (
+    "https://backend.simfin.com/api/v3/companies/statements/compact"
+)
+SIMFIN_WEIGHTED_SHARES_URL = (
+    "https://backend.simfin.com/api/v3/companies/weighted-shares-outstanding"
+)
+
+
+class SimFinServerError(Exception):
+    """Raised when SimFin returns HTTP 500 so caller can trigger fallback."""
+
 
 # Map country codes (from company_static) to OECD 3-letter codes
 COUNTRY_TO_OECD = {
@@ -79,6 +88,12 @@ class DataFetcher:
         )
         self._av_last_request_ts = 0.0
         self._av_rate_limit_lock = Lock()
+        self.simfin_api_key = os.getenv("SIMFIN_API_KEY")
+        self._simfin_min_interval_seconds = float(
+            os.getenv("SIMFIN_MIN_INTERVAL_SECONDS", "0.55")
+        )
+        self._simfin_last_request_ts = 0.0
+        self._simfin_rate_limit_lock = Lock()
         self.minio._ensure_bucket(self.bucket)
         # Populated after each fetch — keyed by 'delisted' and 'fetch_error'
         self.price_failures = {}
@@ -235,22 +250,9 @@ class DataFetcher:
             self.bucket, self._parquet_path(data_type, name)
         )
 
-    @staticmethod
-    def _normalize_fundamentals_period(period):
-        """Validate and normalise fundamentals period namespace."""
-        period = (period or "quarter").strip().lower()
-        if period not in FUNDAMENTALS_PERIODS:
-            raise ValueError(
-                f"Invalid fundamentals period '{period}'. "
-                f"Expected one of {sorted(FUNDAMENTALS_PERIODS)}."
-            )
-        return period
-
-    def _fundamentals_cache_name(self, symbol, source, period="quarter"):
-        """Build fundamentals cache key name with source + period namespace."""
-        src = self._normalize_fundamentals_source(source)
-        period = self._normalize_fundamentals_period(period)
-        return f"{period}/{symbol}.{src}"
+    def _fundamentals_cache_name(self, symbol):
+        """Build fundamentals cache key name (symbol only)."""
+        return f"{symbol}"
 
     def mark_loaded(self, data_type, name):
         """Update a CTL file to mark data as loaded into PostgreSQL.
@@ -270,27 +272,20 @@ class DataFetcher:
             return
 
         # Backward-compatible marking for fundamentals:
-        # - exact source-scoped cache key (e.g. quarter/AAPL.yfinance)
-        # - all source-scoped caches for symbol when caller passes symbol only
-        # - all source-scoped caches for period/symbol when caller passes period
-        # - legacy non-source key (e.g. AAPL)
+        # - exact source-scoped cache key (e.g. AAPL.alphavantage)
+        # - legacy symbol-only key (e.g. AAPL)
         names_to_mark = set()
         if "." in str(name):
             names_to_mark.add(name)
         else:
             names_to_mark.add(name)
-            scan_prefixes = [f"fundamentals/{name}."]
-            for period in sorted(FUNDAMENTALS_PERIODS):
-                scan_prefixes.append(f"fundamentals/{period}/{name}.")
-
-            for prefix in scan_prefixes:
-                for object_name in self.minio.list_objects(
-                    self.bucket, prefix=prefix
-                ):
-                    if object_name.endswith(".ctl"):
-                        names_to_mark.add(
-                            object_name.split("/", 1)[1].rsplit(".ctl", 1)[0]
-                        )
+            for object_name in self.minio.list_objects(
+                self.bucket, prefix=f"fundamentals/{name}."
+            ):
+                if object_name.endswith(".ctl"):
+                    names_to_mark.add(
+                        object_name.split("/", 1)[1].rsplit(".ctl", 1)[0]
+                    )
 
         for cache_name in names_to_mark:
             ctl = self._read_ctl(data_type, cache_name)
@@ -308,7 +303,7 @@ class DataFetcher:
     # ================================================================
 
     def _classify_missing(self, symbols):
-        """Classify why symbols returned no data from yfinance.
+        """Classify why symbols returned no data.
 
         For each symbol that produced no rows, checks ticker.info to
         determine whether the company is genuinely delisted (expected,
@@ -501,32 +496,26 @@ class DataFetcher:
         ]
         return df[[c for c in keep if c in df.columns]]
 
-    # Fundamentals (source: yfinance primary, Alpha Vantage backup)
+    # Fundamentals (source: SimFin with Alpha Vantage backup)
 
     def fetch_fundamentals(
         self,
         symbols,
-        max_workers=10,
-        target_quarters=20,
-        source="yfinance",
+        period="5y",
+        source="simfin",
     ):
         """Fetch quarterly financial statements for all symbols.
 
-        Uses configurable source routing:
-        - yfinance (default): yfinance only, returns all available
-          yfinance quarters.
-        - alphavantage: Alpha Vantage only.
+        Supports source routing:
+        - simfin: SimFin primary with Alpha Vantage fallback on SimFin HTTP 500.
+        - alphavantage: Alpha Vantage only (no fallback).
 
         Per-symbol parquet files are cached in MinIO.
 
         Args:
             symbols: List of stock ticker symbols.
-            max_workers: Worker count used for yfinance fundamentals
-                parallel fetch. Non-yfinance modes stay sequential.
-            target_quarters: Number of recent quarters to keep per symbol
-                (ignored when source='yfinance').
-            source: Fundamentals data source strategy ('yfinance',
-                or 'alphavantage').
+            period: Historical window to keep (e.g. '1y', '5y', 'max').
+            source: Fundamentals data source strategy.
 
         Returns:
             pd.DataFrame: Combined financial data with columns: symbol,
@@ -540,39 +529,15 @@ class DataFetcher:
 
         for symbol in symbols:
             sym = symbol.strip()
-            cache_name = self._fundamentals_cache_name(
-                sym, source, period="quarter"
-            )
+            cache_name = self._fundamentals_cache_name(sym)
             if self._is_cached("fundamentals", cache_name):
                 df = self._load_cached("fundamentals", cache_name)
                 if df is not None:
                     df = self._ensure_fundamentals_schema(df)
                     df = self._dedupe_dataframe("fundamentals", df, name=sym)
-                    source_series = (
-                        df.get("source", pd.Series(dtype=object))
-                        .dropna()
-                        .astype(str)
-                        .str.lower()
+                    cached_dfs.append(
+                        self._apply_fundamentals_period(df, period)
                     )
-                    has_yfinance_data = source_series.str.contains(
-                        "yfinance", regex=False
-                    ).any()
-                    is_alpha_only = (
-                        not source_series.empty
-                        and source_series.eq("alphavantage").all()
-                    )
-                    needs_refresh = (
-                        (source == "alphavantage" and len(df) < target_quarters)
-                        or (source == "yfinance" and not has_yfinance_data)
-                        or (source == "alphavantage" and not is_alpha_only)
-                    )
-                    if needs_refresh:
-                        to_refresh.append(sym)
-                    else:
-                        cached_target = len(df) if source == "yfinance" else target_quarters
-                        cached_dfs.append(
-                            df.sort_values("report_date", ascending=False).head(cached_target)
-                        )
                     continue
             to_refresh.append(sym)
 
@@ -582,17 +547,18 @@ class DataFetcher:
         )
 
         if to_refresh:
-            fetched = self._parallel_fetch_fundamentals(
+            fetched, failed = self._parallel_fetch_fundamentals(
                 to_refresh,
-                max_workers,
-                target_quarters,
-                source=source,
+                period,
+                source,
             )
-        if uncached:
-            fetched, failed = self._parallel_fetch_fundamentals(uncached, max_workers)
             cached_dfs.extend(fetched)
             if failed:
                 self.fundamentals_failures = self._classify_missing(failed)
+            else:
+                self.fundamentals_failures = {}
+        else:
+            self.fundamentals_failures = {}
 
         if not cached_dfs:
             return pd.DataFrame()
@@ -605,16 +571,14 @@ class DataFetcher:
     def _parallel_fetch_fundamentals(
         self,
         symbols,
-        max_workers,
-        target_quarters,
-        source="yfinance",
+        period,
+        source,
     ):
-        """Fetch fundamentals sequentially per source strategy.
+        """Fetch fundamentals sequentially (rate-limit safe).
 
         Args:
             symbols: Symbols to fetch.
-            max_workers: Worker count for yfinance parallel fetch.
-            target_quarters: Number of recent quarters to retain.
+            period: Historical window to keep.
             source: Fundamentals data source strategy.
 
         Returns:
@@ -623,79 +587,35 @@ class DataFetcher:
         result_dfs = []
         failed = []
 
-        if source == "yfinance":
-            workers = max(1, int(max_workers or 1))
-            logger.info(
-                "Fetching yfinance fundamentals for %d symbols in parallel "
-                "(workers=%d).",
-                len(symbols),
-                workers,
-            )
-            with ThreadPoolExecutor(max_workers=workers) as executor:
-                futures = {
-                    executor.submit(
-                        self._fetch_single_fundamental,
-                        symbol,
-                        target_quarters,
-                        source,
-                    ): symbol
-                    for symbol in symbols
-                }
-                for future in as_completed(futures):
-                    symbol = futures[future]
-                    try:
-                        df = future.result()
-                        if df is not None and not df.empty:
-                            df = self._ensure_fundamentals_schema(df)
-                            df = self._dedupe_dataframe(
-                                "fundamentals", df, name=symbol
-                            )
-                            cache_source = ",".join(
-                                sorted(df["source"].dropna().astype(str).unique())
-                            ) or "unknown"
-                            cache_name = self._fundamentals_cache_name(
-                                symbol, source, period="quarter"
-                            )
-                            self._cache_dataframe(
-                                "fundamentals", cache_name, df, cache_source
-                            )
-                            result_dfs.append(df)
-                        else:
-                            failed.append(symbol)
-                    except Exception as e:
-                        logger.error("Failed fundamentals for %s: %s", symbol, e)
-                        failed.append(symbol)
-        else:
-            logger.info(
-                "Fetching fundamentals for %d symbols sequentially "
-                "(alpha vantage throttle-safe).",
-                len(symbols),
-            )
-            for symbol in symbols:
-                try:
-                    df = self._fetch_single_fundamental(
-                        symbol,
-                        target_quarters=target_quarters,
-                        source=source,
+        logger.info(
+            "Fetching fundamentals for %d symbols sequentially "
+            "(source=%s).",
+            len(symbols),
+            source,
+        )
+        for symbol in symbols:
+            try:
+                df = self._fetch_single_fundamental(
+                    symbol,
+                    period=period,
+                    source=source,
+                )
+                if df is not None and not df.empty:
+                    df = self._ensure_fundamentals_schema(df)
+                    df = self._dedupe_dataframe("fundamentals", df, name=symbol)
+                    cache_source = ",".join(
+                        sorted(df["source"].dropna().astype(str).unique())
+                    ) or "unknown"
+                    cache_name = self._fundamentals_cache_name(symbol)
+                    self._cache_dataframe(
+                        "fundamentals", cache_name, df, cache_source
                     )
-                    if df is not None and not df.empty:
-                        df = self._ensure_fundamentals_schema(df)
-                        df = self._dedupe_dataframe("fundamentals", df, name=symbol)
-                        cache_source = ",".join(
-                            sorted(df["source"].dropna().astype(str).unique())
-                        ) or "unknown"
-                        cache_name = self._fundamentals_cache_name(
-                            symbol, source, period="quarter"
-                        )
-                        self._cache_dataframe(
-                            "fundamentals", cache_name, df, cache_source
-                        )
-                        result_dfs.append(df)
-                    else:
-                        failed.append(symbol)
-                except Exception as e:
-                    logger.error("Failed fundamentals for %s: %s", symbol, e)
+                    result_dfs.append(df)
+                else:
                     failed.append(symbol)
+            except Exception as e:
+                logger.error("Failed fundamentals for %s: %s", symbol, e)
+                failed.append(symbol)
 
         logger.info(
             "Fundamentals: %d success, %d failed",
@@ -709,8 +629,8 @@ class DataFetcher:
     @staticmethod
     def _normalize_fundamentals_source(source):
         """Validate and normalise fundamentals source parameter."""
-        source = (source or "yfinance").strip().lower()
-        allowed = {"yfinance", "alphavantage"}
+        source = (source or "simfin").strip().lower()
+        allowed = {"simfin", "alphavantage"}
         if source not in allowed:
             raise ValueError(
                 "Invalid fundamentals source "
@@ -719,123 +639,66 @@ class DataFetcher:
         return source
 
     def _fetch_single_fundamental(
-        self, symbol, target_quarters=20, source="yfinance"
+        self, symbol, period="5y", source="simfin"
     ):
         """Fetch one symbol using the requested source strategy.
 
         Args:
             symbol: Stock ticker symbol.
-            target_quarters: Number of recent quarters to return
-                (ignored when source='yfinance').
+            period: Historical window to keep.
             source: Fundamentals data source strategy.
 
         Returns:
             pd.DataFrame or None.
         """
         source = self._normalize_fundamentals_source(source)
-
-        yf_df = pd.DataFrame()
-        av_df = pd.DataFrame()
-
-        if source == "yfinance":
-            yf_df = self._fetch_yfinance_fundamentals(symbol)
-            yf_df = self._ensure_fundamentals_schema(yf_df)
-
-        av_needed = source == "alphavantage"
-
-        if av_needed:
-            av_df = self._fetch_alpha_vantage_fundamentals(symbol)
-            av_df = self._ensure_fundamentals_schema(av_df)
-
         if source == "alphavantage":
-            df = av_df
+            df = self._fetch_alpha_vantage_fundamentals(symbol)
         else:
-            df = yf_df
+            try:
+                df = self._fetch_simfin_fundamentals(symbol)
+            except SimFinServerError:
+                logger.warning(
+                    "SimFin HTTP 500 for %s; falling back to Alpha Vantage.",
+                    symbol,
+                )
+                df = self._fetch_alpha_vantage_fundamentals(symbol)
+        df = self._ensure_fundamentals_schema(df)
 
         if df is None or df.empty:
             return None
 
         df = self._ensure_fundamentals_schema(df)
-        df = df.sort_values("report_date", ascending=False)
-        if source != "yfinance":
-            df = df.head(target_quarters)
+        df = self._apply_fundamentals_period(df, period)
         return df.reset_index(drop=True)
 
-    def _fetch_yfinance_fundamentals(self, symbol):
-        """Fetch quarterly financial statements for one symbol from yfinance."""
-        ticker = yf.Ticker(symbol)
+    @staticmethod
+    def _apply_fundamentals_period(df, period):
+        """Filter fundamentals to a historical lookback window by report_date."""
+        if df is None or df.empty:
+            return df
 
-        bs = ticker.quarterly_balance_sheet
-        inc = ticker.quarterly_financials
-        info = ticker.info or {}
+        out = df.copy()
+        out["report_date"] = pd.to_datetime(out["report_date"], errors="coerce")
+        out = out.dropna(subset=["report_date"]).sort_values(
+            "report_date", ascending=False
+        )
 
-        if bs is None or bs.empty:
-            logger.warning("No balance sheet for %s", symbol)
-            return None
+        p = (period or "5y").strip().lower()
+        if p == "max":
+            return out
 
-        records = []
-        for date_col in bs.columns:
-            ts = pd.Timestamp(date_col)
-            quarter = (ts.month - 1) // 3 + 1
-            record = {
-                "symbol": symbol,
-                "fiscal_year": ts.year,
-                "fiscal_quarter": quarter,
-                "report_date": ts.date(),
-                "currency": info.get("currency"),
-                "total_assets": self._safe_get(bs, "Total Assets", date_col),
-                "total_equity": (
-                    self._safe_get(bs, "Stockholders Equity", date_col)
-                    or self._safe_get(
-                        bs, "Total Stockholder Equity", date_col
+        if p.endswith("y"):
+            try:
+                years = int(p[:-1])
+                if years > 0:
+                    cutoff = pd.Timestamp.utcnow().tz_localize(None) - pd.DateOffset(
+                        years=years
                     )
-                ),
-                "total_debt": (
-                    self._safe_get(bs, "Total Debt", date_col)
-                    or self._safe_get(bs, "Long Term Debt", date_col)
-                ),
-                # Use total_equity from the balance sheet as book value —
-                # already quarterly, so correct for historical backtesting
-                "book_value_equity": (
-                    self._safe_get(bs, "Stockholders Equity", date_col)
-                    or self._safe_get(bs, "Total Stockholder Equity", date_col)
-                ),
-                # Shares outstanding: try balance sheet first (quarterly,
-                # historically accurate), fall back to ticker.info snapshot
-                "shares_outstanding": (
-                    self._safe_get(bs, "Ordinary Shares Number", date_col)
-                    or self._safe_get(bs, "Share Issued", date_col)
-                    or info.get("sharesOutstanding")
-                ),
-                "source": "yfinance",
-            }
-
-            if inc is not None and date_col in inc.columns:
-                record["net_income"] = self._safe_get(
-                    inc, "Net Income", date_col
-                )
-                record["eps"] = (
-                    self._safe_get(inc, "Basic EPS", date_col)
-                    or self._safe_get(inc, "Diluted EPS", date_col)
-                )
-
-                # Derive shares from net_income / eps if balance sheet
-                # didn't have them — gives a quarterly estimate
-                if record["shares_outstanding"] is None:
-                    ni = record.get("net_income")
-                    eps = record.get("eps")
-                    if ni and eps and eps != 0:
-                        record["shares_outstanding"] = abs(ni / eps)
-
-            records.append(record)
-
-        if not records:
-            return pd.DataFrame()
-
-        df = pd.DataFrame(records)
-        df["report_date"] = pd.to_datetime(df["report_date"])
-        df = df.sort_values("report_date", ascending=False).reset_index(drop=True)
-        return df
+                    return out[out["report_date"] >= cutoff]
+            except ValueError:
+                pass
+        return out
 
     def _fetch_alpha_vantage_fundamentals(self, symbol):
         """Fetch quarterly balance sheet + income + earnings data from AV."""
@@ -867,6 +730,7 @@ class DataFetcher:
                 derived_debt,
             )
             shares = self._to_float(report.get("commonStockSharesOutstanding"))
+            total_equity = self._to_float(report.get("totalShareholderEquity"))
             rows[key] = {
                 "symbol": symbol,
                 "fiscal_year": key.year,
@@ -874,11 +738,9 @@ class DataFetcher:
                 "report_date": key,
                 "currency": report.get("reportedCurrency"),
                 "total_assets": self._to_float(report.get("totalAssets")),
-                "total_equity": self._to_float(
-                    report.get("totalShareholderEquity")
-                ),
+                "total_equity": total_equity,
                 "total_debt": total_debt,
-                "book_value_equity": None,
+                "book_value_equity": total_equity,
                 "shares_outstanding": shares,
                 "net_income": None,
                 "eps": None,
@@ -943,19 +805,284 @@ class DataFetcher:
 
         df = pd.DataFrame(list(rows.values()))
 
-        # If book value/share is missing, compute as equity / shares.
-        can_compute = (
-            df["book_value_equity"].isna()
-            & df["total_equity"].notna()
-            & df["shares_outstanding"].notna()
-            & (df["shares_outstanding"] > 0)
-        )
-        df.loc[can_compute, "book_value_equity"] = (
-            df.loc[can_compute, "total_equity"]
-            / df.loc[can_compute, "shares_outstanding"]
-        )
+        # For Alpha Vantage rows, treat book value equity as total equity.
+        df["book_value_equity"] = df["book_value_equity"].fillna(df["total_equity"])
         df["report_date"] = pd.to_datetime(df["report_date"])
         return df.sort_values("report_date", ascending=False).reset_index(drop=True)
+
+    def _fetch_simfin_fundamentals(self, symbol):
+        """Fetch quarterly fundamentals from SimFin statements + shares."""
+        if not self.simfin_api_key:
+            logger.warning(
+                "SIMFIN_API_KEY is not set; skipping SimFin fetch for %s",
+                symbol,
+            )
+            return pd.DataFrame()
+        statements_payload = self._simfin_get(
+            SIMFIN_STATEMENTS_URL,
+            params={
+                "ticker": symbol,
+                "statements": "pl,bs,derived",
+                "period": "q1,q2,q3,q4",
+            },
+        )
+        shares_payload = self._simfin_get(
+            SIMFIN_WEIGHTED_SHARES_URL,
+            params={"ticker": symbol, "period": "q1,q2,q3,q4"},
+        )
+
+        if not statements_payload:
+            return pd.DataFrame()
+        statement_rows = []
+        for company in statements_payload:
+            ticker = company.get("ticker", symbol)
+            statement_dfs = {}
+            for stmt in company.get("statements", []):
+                stmt_name = str(stmt.get("statement", "")).upper()
+                data = stmt.get("data") or []
+                columns = stmt.get("columns") or []
+                if not data or not columns:
+                    continue
+                df = pd.DataFrame(data, columns=columns)
+                df["symbol"] = ticker
+                statement_dfs[stmt_name] = df
+
+            pl = self._simfin_statement_frame(
+                statement_dfs.get("PL"),
+                {
+                    "Fiscal Year": "fiscal_year",
+                    "Fiscal Period": "fiscal_quarter",
+                    "Report Date": "report_date",
+                    "Net Income": "net_income",
+                },
+                extra_cols=["net_income"],
+            )
+            bs = self._simfin_statement_frame(
+                statement_dfs.get("BS"),
+                {
+                    "Fiscal Year": "fiscal_year",
+                    "Fiscal Period": "fiscal_quarter",
+                    "Report Date": "report_date",
+                    "Total Assets": "total_assets",
+                    "Total Equity": "total_equity",
+                },
+                extra_cols=["total_assets", "total_equity"],
+            )
+            derived = self._simfin_statement_frame(
+                statement_dfs.get("DERIVED"),
+                {
+                    "Fiscal Year": "fiscal_year",
+                    "Fiscal Period": "fiscal_quarter",
+                    "Report Date": "report_date",
+                    "Total Debt": "total_debt",
+                    "Earnings Per Share, Diluted": "eps",
+                },
+                extra_cols=["total_debt", "eps"],
+            )
+            keys = ["symbol", "fiscal_year", "fiscal_quarter", "report_date"]
+            merged = pl.merge(bs, on=keys, how="outer").merge(
+                derived, on=keys, how="outer"
+            )
+            merged["book_value_equity"] = merged.get("total_equity")
+            statement_rows.append(merged)
+
+        if not statement_rows:
+            return pd.DataFrame()
+
+        out = pd.concat(statement_rows, ignore_index=True)
+
+        shares_df = self._simfin_weighted_shares_frame(
+            shares_payload, default_symbol=symbol
+        )
+        if not shares_df.empty:
+            out = out.merge(
+                shares_df,
+                on=["symbol", "fiscal_year", "fiscal_quarter"],
+                how="left",
+            )
+        else:
+            out["shares_outstanding"] = None
+
+        out["report_date"] = pd.to_datetime(out["report_date"], errors="coerce")
+        out["fiscal_quarter"] = out["fiscal_quarter"].apply(
+            self._normalize_quarter_value
+        )
+        for col in [
+            "total_assets",
+            "total_equity",
+            "total_debt",
+            "net_income",
+            "eps",
+            "book_value_equity",
+            "shares_outstanding",
+        ]:
+            if col in out.columns:
+                out[col] = pd.to_numeric(out[col], errors="coerce")
+
+        out["currency"] = None
+        out["source"] = "simfin"
+        out = self._ensure_fundamentals_schema(out)
+        out = out.dropna(subset=["fiscal_year", "fiscal_quarter"])
+        out = out.sort_values("report_date", ascending=False)
+        out = out.drop_duplicates(
+            subset=["symbol", "fiscal_year", "fiscal_quarter"],
+            keep="first",
+        )
+        return out.reset_index(drop=True)
+
+    def _simfin_get(self, url, params, timeout=20, max_retries=3):
+        """Call SimFin API with auth header + free-tier throttle."""
+        headers = {
+            "Authorization": f"api-key {self.simfin_api_key}",
+            "accept": "application/json",
+        }
+        for attempt in range(max_retries):
+            try:
+                self._simfin_throttle_wait()
+                response = requests.get(
+                    url, params=params, headers=headers, timeout=timeout
+                )
+                status_code = response.status_code
+
+                if status_code == 200:
+                    return response.json()
+
+                if status_code == 500:
+                    logger.warning(
+                        "SimFin returned HTTP 500 (no retry) "
+                        "(%s, params=%s)",
+                        url,
+                        params,
+                    )
+                    raise SimFinServerError(
+                        f"SimFin HTTP 500 for {url} params={params}"
+                    )
+
+                if status_code == 429:
+                    logger.warning(
+                        "SimFin rate limited (429) (%s, params=%s)",
+                        url,
+                        params,
+                    )
+                    retry_after = response.headers.get("Retry-After")
+                    if retry_after:
+                        try:
+                            sleep(float(retry_after))
+                        except ValueError:
+                            sleep(2.0)
+                    else:
+                        sleep(2.0)
+                    continue
+
+                logger.warning(
+                    "SimFin request failed with HTTP %s (%s, params=%s)",
+                    status_code,
+                    url,
+                    params,
+                )
+                sleep(1.5)
+            except requests.RequestException as exc:
+                logger.warning(
+                    "SimFin request failed (%s, params=%s): %s",
+                    url,
+                    params,
+                    exc,
+                )
+                sleep(1.5)
+        logger.warning("SimFin unavailable after retries (%s)", params)
+        return None
+
+    def _simfin_throttle_wait(self):
+        """Ensure SimFin request spacing (free tier: 2 req/sec)."""
+        with self._simfin_rate_limit_lock:
+            elapsed = monotonic() - self._simfin_last_request_ts
+            if elapsed < self._simfin_min_interval_seconds:
+                sleep(self._simfin_min_interval_seconds - elapsed)
+            self._simfin_last_request_ts = monotonic()
+
+    def _simfin_statement_frame(self, df, rename_map, extra_cols):
+        """Project and rename one SimFin statement frame safely."""
+        base_cols = ["symbol"] + list(rename_map.keys())
+        out_cols = ["symbol", "fiscal_year", "fiscal_quarter", "report_date"]
+        out_cols.extend(extra_cols)
+        if df is None or df.empty or not all(col in df.columns for col in base_cols):
+            return pd.DataFrame(columns=out_cols)
+
+        out = df[base_cols].copy().rename(columns=rename_map)
+        out["fiscal_year"] = pd.to_numeric(out["fiscal_year"], errors="coerce")
+        out["fiscal_quarter"] = out["fiscal_quarter"].apply(
+            self._normalize_quarter_value
+        )
+        out["report_date"] = pd.to_datetime(out["report_date"], errors="coerce")
+        for col in extra_cols:
+            if col in out.columns:
+                out[col] = pd.to_numeric(out[col], errors="coerce")
+        return out[out_cols]
+
+    def _simfin_weighted_shares_frame(self, payload, default_symbol=None):
+        """Build quarterly diluted weighted-shares dataframe from SimFin."""
+        if not payload:
+            return pd.DataFrame(
+                columns=["symbol", "fiscal_year", "fiscal_quarter", "shares_outstanding"]
+            )
+        shares_df = pd.DataFrame(payload)
+        if shares_df.empty:
+            return pd.DataFrame(
+                columns=["symbol", "fiscal_year", "fiscal_quarter", "shares_outstanding"]
+            )
+
+        rename_map = {
+            "ticker": "symbol",
+            "fyear": "fiscal_year",
+            "period": "fiscal_quarter",
+            "diluted": "shares_outstanding",
+            "endDate": "share_end_date",
+        }
+        shares_df = shares_df.rename(columns=rename_map)
+
+        for col in ["symbol", "fiscal_year", "fiscal_quarter", "shares_outstanding"]:
+            if col not in shares_df.columns:
+                shares_df[col] = None
+        if default_symbol is not None:
+            shares_df["symbol"] = shares_df["symbol"].fillna(default_symbol)
+        if "share_end_date" not in shares_df.columns:
+            shares_df["share_end_date"] = None
+
+        shares_df["fiscal_year"] = pd.to_numeric(
+            shares_df["fiscal_year"], errors="coerce"
+        )
+        shares_df["fiscal_quarter"] = shares_df["fiscal_quarter"].apply(
+            self._normalize_quarter_value
+        )
+        shares_df["share_end_date"] = pd.to_datetime(
+            shares_df["share_end_date"], errors="coerce"
+        )
+        shares_df["shares_outstanding"] = pd.to_numeric(
+            shares_df["shares_outstanding"], errors="coerce"
+        )
+        shares_df = shares_df.dropna(subset=["fiscal_year", "fiscal_quarter"])
+        shares_df = shares_df.sort_values("share_end_date")
+        shares_df = shares_df.drop_duplicates(
+            subset=["symbol", "fiscal_year", "fiscal_quarter"], keep="last"
+        )
+        return shares_df[
+            ["symbol", "fiscal_year", "fiscal_quarter", "shares_outstanding"]
+        ]
+
+    @staticmethod
+    def _normalize_quarter_value(value):
+        """Normalize quarter representations to integer 1..4."""
+        if value is None:
+            return None
+        text = str(value).strip().upper()
+        mapping = {"Q1": 1, "Q2": 2, "Q3": 3, "Q4": 4}
+        if text in mapping:
+            return mapping[text]
+        try:
+            q = int(float(text))
+            return q if q in (1, 2, 3, 4) else None
+        except (TypeError, ValueError):
+            return None
 
     def _alpha_vantage_get(self, function_name, symbol, max_retries=3):
         """Call Alpha Vantage API with basic retry for rate limits."""
@@ -980,7 +1107,7 @@ class DataFetcher:
                     function_name,
                     exc,
                 )
-                sleep(1.5 * (attempt + 1))
+                sleep(2.0)
                 continue
 
             if "Error Message" in payload:
@@ -998,7 +1125,7 @@ class DataFetcher:
                     symbol,
                     function_name,
                 )
-                sleep(12 * (attempt + 1))
+                sleep(2 * (attempt + 1))
                 continue
 
             return payload
@@ -1075,27 +1202,6 @@ class DataFetcher:
         out["source"] = out["source"].fillna("unknown")
         return out[columns]
 
-    @staticmethod
-    def _safe_get(df, row_label, col_label):
-        """Safely extract a value from a DataFrame cell.
-
-        Args:
-            df: Source DataFrame.
-            row_label: Row index label.
-            col_label: Column label.
-
-        Returns:
-            float or None.
-        """
-        try:
-            val = df.loc[row_label, col_label]
-            if pd.isna(val):
-                return None
-            return float(val)
-        except (KeyError, TypeError, ValueError):
-            return None
-
-    
     # Risk-free rates (source: OECD API with yfinance fallback)
 
     def fetch_risk_free_rates(self, countries):
