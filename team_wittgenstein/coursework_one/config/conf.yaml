@@ -18,7 +18,6 @@ minio:
 data:
   price_period: "5y"
   fundamentals_period: "5y"
-  fundamentals_source: "simfin" # options: simfin, alphavantage
 
 validation:
   min_price_rows: 200

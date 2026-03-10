@@ -6,6 +6,7 @@ import yaml
 
 from modules.db.db_connection import PostgresConnection, MongoConnection, MinioConnection
 from modules.input.data_collector import DataFetcher
+from modules.processing.company_filter import filter_sec_listed_symbols
 from modules.processing.data_validator import DataValidator
 from modules.output.data_writer import DataWriter
 
@@ -117,6 +118,14 @@ def main():
         symbols = symbols[:max_sym]
         logger.warning("DEV MODE: limited to %d symbols", max_sym)
 
+    # Keep only symbols currently listed by SEC exchange file.
+    symbols, dropped_symbols = filter_sec_listed_symbols(symbols)
+    if not symbols:
+        raise RuntimeError(
+            "No symbols remain after SEC listing filter. "
+            f"Dropped: {len(dropped_symbols)}"
+        )
+
     # ---- Fetch -------------------------------------------------------
     fetcher = DataFetcher(minio)
 
@@ -124,7 +133,7 @@ def main():
     fin_df = fetcher.fetch_fundamentals(
         symbols,
         period=cfg.get("data", {}).get("fundamentals_period", "5y"),
-        source=cfg.get("data", {}).get("fundamentals_source", "simfin"),
+        source=cfg.get("data", {}).get("fundamentals_source", "edgar"),
     )
     rates_df = fetcher.fetch_risk_free_rates(countries)
 

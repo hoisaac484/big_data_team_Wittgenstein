@@ -247,17 +247,33 @@ class DataValidator:
                 f"{dupes} duplicate (symbol, fiscal_year, fiscal_quarter) rows"
             )
 
+        # Record null rates for all available financial fields
+        null_rates = {}
+        for col in df.columns:
+            null_pct = df[col].isna().mean()
+            null_rates[col] = null_pct
+            result.stats[f"{col}_null_pct"] = f"{null_pct:.2%}"
+            if null_pct > 0:
+                if "symbol" in df.columns:
+                    tickers = (
+                        df.loc[df[col].isna(), "symbol"]
+                        .fillna("<NULL_SYMBOL>")
+                        .astype(str)
+                        .str.strip()
+                    )
+                    tickers = sorted(set(t for t in tickers if t))
+                else:
+                    tickers = []
+                result.stats[f"{col}_null_tickers"] = ", ".join(tickers) if tickers else "-"
+
         # Check null rates on critical columns
         critical = ["total_assets", "total_equity", "net_income"]
         for col in critical:
-            if col in df.columns:
-                null_pct = df[col].isna().mean()
-                result.stats[f"{col}_null_pct"] = f"{null_pct:.2%}"
-                if null_pct > self.max_null_pct:
-                    result.add_warning(
-                        f"{col} null rate is {null_pct:.2%}, "
-                        f"exceeds {self.max_null_pct:.0%}"
-                    )
+            if col in null_rates and null_rates[col] > self.max_null_pct:
+                result.add_warning(
+                    f"{col} null rate is {null_rates[col]:.2%}, "
+                    f"exceeds {self.max_null_pct:.0%}"
+                )
 
         # Check symbol coverage
         if expected_symbols is not None:

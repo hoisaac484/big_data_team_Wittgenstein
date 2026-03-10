@@ -25,17 +25,12 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 BUCKET = "wittgenstein-cache"
-ALPHA_VANTAGE_BASE_URL = "https://www.alphavantage.co/query"
 SIMFIN_STATEMENTS_URL = (
     "https://backend.simfin.com/api/v3/companies/statements/compact"
 )
 SIMFIN_WEIGHTED_SHARES_URL = (
     "https://backend.simfin.com/api/v3/companies/weighted-shares-outstanding"
 )
-
-
-class SimFinServerError(Exception):
-    """Raised when SimFin returns HTTP 500 so caller can trigger fallback."""
 
 
 # Map country codes (from company_static) to OECD 3-letter codes
@@ -79,21 +74,23 @@ class DataFetcher:
     def __init__(self, minio_conn):
         self.minio = minio_conn
         self.bucket = BUCKET
-        self.alpha_vantage_api_key = (
-            os.getenv("ALPHA_VANTAGE_API_KEY")
-            or os.getenv("ALPHAVANTAGE_API_KEY")
-        )
-        self._av_min_interval_seconds = float(
-            os.getenv("ALPHA_VANTAGE_MIN_INTERVAL_SECONDS", "1.1")
-        )
-        self._av_last_request_ts = 0.0
-        self._av_rate_limit_lock = Lock()
         self.simfin_api_key = os.getenv("SIMFIN_API_KEY")
         self._simfin_min_interval_seconds = float(
             os.getenv("SIMFIN_MIN_INTERVAL_SECONDS", "0.55")
         )
         self._simfin_last_request_ts = 0.0
         self._simfin_rate_limit_lock = Lock()
+        self.edgar_user_agent = (
+            os.getenv("EDGAR_USER_AGENT")
+            or os.getenv("SEC_USER_AGENT")
+            or "research@example.com"
+        )
+        self._edgar_min_interval_seconds = float(
+            os.getenv("EDGAR_MIN_INTERVAL_SECONDS", "0.5")
+        )
+        self._edgar_last_request_ts = 0.0
+        self._edgar_rate_limit_lock = Lock()
+        self._edgar_ticker_to_cik = None
         self.minio._ensure_bucket(self.bucket)
         # Populated after each fetch — keyed by 'delisted' and 'fetch_error'
         self.price_failures = {}
@@ -272,7 +269,7 @@ class DataFetcher:
             return
 
         # Backward-compatible marking for fundamentals:
-        # - exact source-scoped cache key (e.g. AAPL.alphavantage)
+        # - exact source-scoped cache key (legacy)
         # - legacy symbol-only key (e.g. AAPL)
         names_to_mark = set()
         if "." in str(name):
@@ -496,19 +493,18 @@ class DataFetcher:
         ]
         return df[[c for c in keep if c in df.columns]]
 
-    # Fundamentals (source: SimFin with Alpha Vantage backup)
+    # Fundamentals (source: EDGAR with SimFin fallback)
 
     def fetch_fundamentals(
         self,
         symbols,
         period="5y",
-        source="simfin",
+        source="edgar",
     ):
         """Fetch quarterly financial statements for all symbols.
 
         Supports source routing:
-        - simfin: SimFin primary with Alpha Vantage fallback on SimFin HTTP 500.
-        - alphavantage: Alpha Vantage only (no fallback).
+        - edgar: SEC EDGAR only (throttled to 2 req/sec).
 
         Per-symbol parquet files are cached in MinIO.
 
@@ -629,8 +625,8 @@ class DataFetcher:
     @staticmethod
     def _normalize_fundamentals_source(source):
         """Validate and normalise fundamentals source parameter."""
-        source = (source or "simfin").strip().lower()
-        allowed = {"simfin", "alphavantage"}
+        source = (source or "edgar").strip().lower()
+        allowed = {"edgar"}
         if source not in allowed:
             raise ValueError(
                 "Invalid fundamentals source "
@@ -639,7 +635,7 @@ class DataFetcher:
         return source
 
     def _fetch_single_fundamental(
-        self, symbol, period="5y", source="simfin"
+        self, symbol, period="5y", source="edgar"
     ):
         """Fetch one symbol using the requested source strategy.
 
@@ -652,25 +648,235 @@ class DataFetcher:
             pd.DataFrame or None.
         """
         source = self._normalize_fundamentals_source(source)
-        if source == "alphavantage":
-            df = self._fetch_alpha_vantage_fundamentals(symbol)
-        else:
-            try:
-                df = self._fetch_simfin_fundamentals(symbol)
-            except SimFinServerError:
-                logger.warning(
-                    "SimFin HTTP 500 for %s; falling back to Alpha Vantage.",
-                    symbol,
-                )
-                df = self._fetch_alpha_vantage_fundamentals(symbol)
+        _ = source
+        df = self._fetch_edgar_fundamentals(symbol, period=period)
+        if df is not None and not df.empty:
+            df = self._fill_edgar_nulls_from_simfin(df, symbol)
         df = self._ensure_fundamentals_schema(df)
 
         if df is None or df.empty:
             return None
 
         df = self._ensure_fundamentals_schema(df)
+        df = self._fill_whole_null_columns_from_yfinance(df, symbol)
+        df = self._impute_fundamentals_missing(df)
         df = self._apply_fundamentals_period(df, period)
         return df.reset_index(drop=True)
+
+    @staticmethod
+    def _impute_fundamentals_missing(df):
+        """Forward-fill then backfill fundamentals values by symbol over time."""
+        if df is None or df.empty:
+            return df
+
+        out = df.copy()
+        out["report_date"] = pd.to_datetime(out["report_date"], errors="coerce")
+        out = out.sort_values(["symbol", "report_date"])
+
+        fill_cols = [
+            "currency",
+            "total_assets",
+            "total_equity",
+            "total_debt",
+            "book_value_equity",
+            "shares_outstanding",
+            "net_income",
+            "eps",
+        ]
+        for col in fill_cols:
+            if col in out.columns:
+                out[col] = out.groupby("symbol")[col].transform(
+                    lambda s: s.ffill().bfill()
+                )
+
+        return out
+
+    def _fill_whole_null_columns_from_yfinance(self, df, symbol):
+        """Fill only whole-null fundamentals columns using yfinance."""
+        out = self._ensure_fundamentals_schema(df)
+        if out.empty:
+            return out
+
+        candidate_cols = [
+            "currency",
+            "total_assets",
+            "total_equity",
+            "total_debt",
+            "book_value_equity",
+            "shares_outstanding",
+            "net_income",
+            "eps",
+        ]
+        whole_null_cols = [col for col in candidate_cols if out[col].isna().all()]
+        if not whole_null_cols:
+            return out
+
+        yf_df = self._fetch_yfinance_fundamentals_for_fill(symbol)
+        if yf_df.empty:
+            return out
+
+        source = yf_df[
+            ["fiscal_year", "fiscal_quarter"] + whole_null_cols
+        ].drop_duplicates(subset=["fiscal_year", "fiscal_quarter"], keep="first")
+        source = source.rename(columns={col: f"{col}__yf" for col in whole_null_cols})
+        merged = out.merge(source, on=["fiscal_year", "fiscal_quarter"], how="left")
+
+        filled_cols = []
+        filled_row_mask = pd.Series(False, index=merged.index)
+        for col in whole_null_cols:
+            yf_col = f"{col}__yf"
+            fill_mask = merged[col].isna() & merged[yf_col].notna()
+            if fill_mask.any():
+                merged.loc[fill_mask, col] = merged.loc[fill_mask, yf_col]
+                filled_cols.append(col)
+                filled_row_mask = filled_row_mask | fill_mask
+            merged = merged.drop(columns=[yf_col])
+
+        if filled_cols:
+            source_series = merged["source"].fillna("").astype(str)
+            has_yf = source_series.str.contains("yfinance", regex=False)
+            update_mask = filled_row_mask & ~has_yf
+            if update_mask.any():
+                merged.loc[update_mask, "source"] = (
+                    source_series.loc[update_mask]
+                    .str.strip(",")
+                    .replace("", "yfinance")
+                    .where(
+                        source_series.loc[update_mask].str.strip(",") == "",
+                        source_series.loc[update_mask].str.strip(",") + ",yfinance",
+                    )
+                )
+            logger.info(
+                "yfinance whole-column fallback for %s filled: %s",
+                symbol,
+                filled_cols,
+            )
+        return self._ensure_fundamentals_schema(merged)
+
+    def _fetch_yfinance_fundamentals_for_fill(self, symbol):
+        """Fetch lightweight yfinance fundamentals for whole-column fallback."""
+        try:
+            ticker = yf.Ticker(symbol)
+            balance_sheet = ticker.quarterly_balance_sheet
+            income_statement = ticker.quarterly_financials
+            info = ticker.info or {}
+        except Exception as exc:
+            logger.warning("yfinance fundamentals fallback failed for %s: %s", symbol, exc)
+            return pd.DataFrame()
+
+        date_cols = set()
+        if balance_sheet is not None and not balance_sheet.empty:
+            date_cols.update(balance_sheet.columns)
+        if income_statement is not None and not income_statement.empty:
+            date_cols.update(income_statement.columns)
+        if not date_cols:
+            return pd.DataFrame()
+
+        def pick(frame, labels, date_col):
+            if frame is None or frame.empty:
+                return None
+            for label in labels:
+                try:
+                    val = frame.loc[label, date_col]
+                except Exception:
+                    continue
+                if pd.notna(val):
+                    return val
+            return None
+
+        rows = []
+        for date_col in sorted(date_cols):
+            ts = pd.Timestamp(date_col)
+            quarter = int(((ts.month - 1) // 3) + 1)
+            total_equity = pick(
+                balance_sheet,
+                ["Stockholders Equity", "Total Stockholder Equity"],
+                date_col,
+            )
+            rows.append(
+                {
+                    "symbol": symbol,
+                    "fiscal_year": ts.year,
+                    "fiscal_quarter": quarter,
+                    "report_date": ts,
+                    "currency": info.get("currency"),
+                    "total_assets": pick(balance_sheet, ["Total Assets"], date_col),
+                    "total_equity": total_equity,
+                    "total_debt": pick(
+                        balance_sheet,
+                        ["Total Debt", "Long Term Debt"],
+                        date_col,
+                    ),
+                    "book_value_equity": total_equity,
+                    "shares_outstanding": (
+                        info.get("sharesOutstanding")
+                    ),
+                    "net_income": pick(income_statement, ["Net Income"], date_col),
+                    "eps": pick(
+                        income_statement,
+                        ["Basic EPS", "Diluted EPS"],
+                        date_col,
+                    ),
+                    "source": "yfinance",
+                }
+            )
+
+        if not rows:
+            return pd.DataFrame()
+        out = pd.DataFrame(rows)
+        out = self._ensure_fundamentals_schema(out)
+        return out.sort_values("report_date", ascending=False).reset_index(drop=True)
+
+    def _fill_edgar_nulls_from_simfin(self, edgar_df, symbol):
+        """Fill EDGAR null fields using SimFin values on matching quarters."""
+        primary = self._ensure_fundamentals_schema(edgar_df)
+        if primary.empty:
+            return primary
+
+        fill_cols = [
+            "currency",
+            "total_assets",
+            "total_equity",
+            "total_debt",
+            "book_value_equity",
+            "shares_outstanding",
+            "net_income",
+            "eps",
+        ]
+        if not primary[fill_cols].isna().any().any():
+            return primary
+
+        simfin_df = self._fetch_simfin_fundamentals(symbol)
+
+        simfin = self._ensure_fundamentals_schema(simfin_df)
+        if simfin.empty:
+            return primary
+
+        key_cols = ["symbol", "fiscal_year", "fiscal_quarter"]
+        source_cols = key_cols + fill_cols
+        renamed = simfin[source_cols].rename(
+            columns={col: f"{col}__simfin" for col in fill_cols}
+        )
+        merged = primary.merge(renamed, on=key_cols, how="left")
+
+        any_filled = pd.Series(False, index=merged.index)
+        for col in fill_cols:
+            simfin_col = f"{col}__simfin"
+            fill_mask = merged[col].isna() & merged[simfin_col].notna()
+            if fill_mask.any():
+                merged.loc[fill_mask, col] = merged.loc[fill_mask, simfin_col]
+                any_filled = any_filled | fill_mask
+            merged = merged.drop(columns=[simfin_col])
+
+        if any_filled.any():
+            merged.loc[any_filled, "source"] = "edgar,simfin"
+            logger.info(
+                "EDGAR null-fill from SimFin for %s: filled %d rows",
+                symbol,
+                int(any_filled.sum()),
+            )
+
+        return merged
 
     @staticmethod
     def _apply_fundamentals_period(df, period):
@@ -700,115 +906,494 @@ class DataFetcher:
                 pass
         return out
 
-    def _fetch_alpha_vantage_fundamentals(self, symbol):
-        """Fetch quarterly balance sheet + income + earnings data from AV."""
-        if not self.alpha_vantage_api_key:
+    def _fetch_edgar_fundamentals(self, symbol, period="5y"):
+        """Fetch quarterly fundamentals from SEC EDGAR concept APIs."""
+        cik = self._edgar_get_cik(symbol)
+        if not cik:
+            logger.warning("EDGAR CIK not found for %s", symbol)
             return pd.DataFrame()
 
-        bs_payload = self._alpha_vantage_get("BALANCE_SHEET", symbol)
-        inc_payload = self._alpha_vantage_get("INCOME_STATEMENT", symbol)
-        earnings_payload = self._alpha_vantage_get("EARNINGS", symbol)
-
-        if not any([bs_payload, inc_payload, earnings_payload]):
-            return pd.DataFrame()
-
-        rows = {}
-
-        bs_reports = (bs_payload or {}).get("quarterlyReports", [])
-        for report in bs_reports:
-            fiscal_date = report.get("fiscalDateEnding")
-            if not fiscal_date:
-                continue
-            key = pd.Timestamp(fiscal_date)
-            short_long_debt = self._to_float(report.get("shortLongTermDebtTotal"))
-            long_term_debt = self._to_float(report.get("longTermDebt"))
-            derived_debt = None
-            if short_long_debt is not None or long_term_debt is not None:
-                derived_debt = (short_long_debt or 0.0) + (long_term_debt or 0.0)
-            total_debt = self._coalesce_numeric(
-                report.get("totalDebt"),
-                derived_debt,
+        years_back = self._period_years(period, default_years=5)
+        cutoff = None
+        if years_back is not None:
+            cutoff = (
+                pd.Timestamp.utcnow().tz_localize(None)
+                - pd.DateOffset(years=years_back + 1)
             )
-            shares = self._to_float(report.get("commonStockSharesOutstanding"))
-            total_equity = self._to_float(report.get("totalShareholderEquity"))
-            rows[key] = {
-                "symbol": symbol,
-                "fiscal_year": key.year,
-                "fiscal_quarter": int(key.quarter),
-                "report_date": key,
-                "currency": report.get("reportedCurrency"),
-                "total_assets": self._to_float(report.get("totalAssets")),
-                "total_equity": total_equity,
-                "total_debt": total_debt,
-                "book_value_equity": total_equity,
-                "shares_outstanding": shares,
-                "net_income": None,
-                "eps": None,
-                "source": "alphavantage",
+
+        periods = self._edgar_get_fiscal_periods(cik, cutoff=cutoff)
+        if periods.empty:
+            return pd.DataFrame()
+
+        result = periods.copy()
+        result["symbol"] = symbol
+
+        def merge_field(tag, field, unit="USD"):
+            nonlocal result
+            concept = self._edgar_fetch_concept(cik, tag, unit=unit, cutoff=cutoff)
+            if concept.empty:
+                result[field] = None
+                return
+            concept = concept.rename(columns={"val": field, "end": "report_date_str"})
+            result = result.merge(
+                concept[["report_date_str", field]],
+                on="report_date_str",
+                how="left",
+            )
+
+        merge_field("Assets", "total_assets", unit="USD")
+        merge_field("NetIncomeLoss", "net_income", unit="USD")
+        if "net_income" in result.columns and result["net_income"].isna().any():
+            profit_loss = self._edgar_fetch_concept(
+                cik, "ProfitLoss", unit="USD", cutoff=cutoff
+            )
+            if not profit_loss.empty:
+                profit_loss = profit_loss.rename(
+                    columns={"val": "_net_income_fb", "end": "report_date_str"}
+                )
+                result = result.merge(
+                    profit_loss[["report_date_str", "_net_income_fb"]],
+                    on="report_date_str",
+                    how="left",
+                )
+                fill_mask = result["net_income"].isna() & result["_net_income_fb"].notna()
+                result.loc[fill_mask, "net_income"] = result.loc[fill_mask, "_net_income_fb"]
+                result = result.drop(columns=["_net_income_fb"])
+
+        eq_primary = self._edgar_fetch_concept(
+            cik,
+            "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
+            unit="USD",
+            cutoff=cutoff,
+        )
+        eq_fallback = self._edgar_fetch_concept(
+            cik, "StockholdersEquity", unit="USD", cutoff=cutoff
+        )
+        if not eq_primary.empty:
+            eq_df = eq_primary.rename(
+                columns={"val": "total_equity", "end": "report_date_str"}
+            )
+            result = result.merge(
+                eq_df[["report_date_str", "total_equity"]],
+                on="report_date_str",
+                how="left",
+            )
+        else:
+            result["total_equity"] = None
+        if not eq_fallback.empty and result["total_equity"].isna().any():
+            eq_fb = eq_fallback.rename(
+                columns={"val": "_total_equity_fb", "end": "report_date_str"}
+            )
+            result = result.merge(
+                eq_fb[["report_date_str", "_total_equity_fb"]],
+                on="report_date_str",
+                how="left",
+            )
+            mask = result["total_equity"].isna() & result["_total_equity_fb"].notna()
+            result.loc[mask, "total_equity"] = result.loc[mask, "_total_equity_fb"]
+            result = result.drop(columns=["_total_equity_fb"])
+        result["book_value_equity"] = result["total_equity"]
+
+        result["shares_outstanding"] = None
+        for tag in [
+            "CommonStockSharesOutstanding",
+            "WeightedAverageNumberOfDilutedSharesOutstanding",
+        ]:
+            if not result["shares_outstanding"].isna().any():
+                break
+            shares = self._edgar_fetch_concept(cik, tag, unit="shares", cutoff=cutoff)
+            if shares.empty:
+                continue
+            shares = shares.rename(
+                columns={"val": "_shares_tmp", "end": "report_date_str"}
+            )
+            result = result.merge(
+                shares[["report_date_str", "_shares_tmp"]],
+                on="report_date_str",
+                how="left",
+            )
+            mask = result["shares_outstanding"].isna() & result["_shares_tmp"].notna()
+            result.loc[mask, "shares_outstanding"] = result.loc[mask, "_shares_tmp"]
+            result = result.drop(columns=["_shares_tmp"])
+
+        eps_df = self._edgar_fetch_concept(
+            cik, "EarningsPerShareDiluted", unit="USD/shares", cutoff=cutoff
+        )
+        if eps_df.empty:
+            eps_df = self._edgar_fetch_concept(
+                cik, "EarningsPerShareBasic", unit="USD/shares", cutoff=cutoff
+            )
+        if not eps_df.empty:
+            eps_df = eps_df.copy()
+            eps_df["period_days"] = (
+                pd.to_datetime(eps_df["end"], errors="coerce")
+                - pd.to_datetime(eps_df["start"], errors="coerce")
+            ).dt.days
+            # Keep longer YTD windows so we can de-cumulate later.
+            eps_df = eps_df.sort_values("period_days", ascending=False).drop_duplicates(
+                "end", keep="first"
+            )
+            eps_df = eps_df.rename(columns={"val": "eps", "end": "report_date_str"})
+            result = result.merge(
+                eps_df[["report_date_str", "eps"]],
+                on="report_date_str",
+                how="left",
+            )
+        else:
+            result["eps"] = None
+
+        # total_debt tiers:
+        # Tier 1: LongTermDebt (row-level primary)
+        # Tier 2: LongTermDebtAndCapitalLeaseObligations (row-level fill)
+        # Tier 3: LongTermDebtNoncurrent + LongTermDebtCurrent (row-level fill)
+        long_term_debt = self._edgar_fetch_concept(
+            cik, "LongTermDebt", unit="USD", cutoff=cutoff
+        )
+        if not long_term_debt.empty:
+            long_term_debt = long_term_debt.rename(
+                columns={"val": "total_debt", "end": "report_date_str"}
+            )
+            result = result.merge(
+                long_term_debt[["report_date_str", "total_debt"]],
+                on="report_date_str",
+                how="left",
+            )
+        else:
+            result["total_debt"] = None
+
+        if result["total_debt"].isna().any():
+            debt_and_lease = self._edgar_fetch_concept(
+                cik,
+                "LongTermDebtAndCapitalLeaseObligations",
+                unit="USD",
+                cutoff=cutoff,
+            )
+            if not debt_and_lease.empty:
+                debt_and_lease = debt_and_lease.rename(
+                    columns={"val": "debt_and_lease", "end": "report_date_str"}
+                )
+                result = result.merge(
+                    debt_and_lease[["report_date_str", "debt_and_lease"]],
+                    on="report_date_str",
+                    how="left",
+                )
+                fill_mask = result["total_debt"].isna() & result["debt_and_lease"].notna()
+                result.loc[fill_mask, "total_debt"] = result.loc[fill_mask, "debt_and_lease"]
+                result = result.drop(columns=["debt_and_lease"])
+
+        if result["total_debt"].isna().any():
+            lt_noncurrent = self._edgar_fetch_concept(
+                cik, "LongTermDebtNoncurrent", unit="USD", cutoff=cutoff
+            )
+            lt_current = self._edgar_fetch_concept(
+                cik, "LongTermDebtCurrent", unit="USD", cutoff=cutoff
+            )
+            if not lt_noncurrent.empty:
+                lt_noncurrent = lt_noncurrent.rename(
+                    columns={"val": "lt_noncurrent", "end": "report_date_str"}
+                )
+                result = result.merge(
+                    lt_noncurrent[["report_date_str", "lt_noncurrent"]],
+                    on="report_date_str",
+                    how="left",
+                )
+            else:
+                result["lt_noncurrent"] = None
+
+            if not lt_current.empty:
+                lt_current = lt_current.rename(
+                    columns={"val": "lt_current", "end": "report_date_str"}
+                )
+                result = result.merge(
+                    lt_current[["report_date_str", "lt_current"]],
+                    on="report_date_str",
+                    how="left",
+                )
+            else:
+                result["lt_current"] = None
+
+            t2_mask = result["total_debt"].isna()
+            lt_noncurrent_num = pd.to_numeric(result["lt_noncurrent"], errors="coerce")
+            lt_current_num = pd.to_numeric(result["lt_current"], errors="coerce")
+            both_nan = lt_noncurrent_num.isna() & lt_current_num.isna()
+            fill_mask = t2_mask & ~both_nan
+            if fill_mask.any():
+                result["total_debt"] = pd.to_numeric(
+                    result["total_debt"], errors="coerce"
+                )
+                result.loc[fill_mask, "total_debt"] = (
+                    lt_noncurrent_num.loc[fill_mask].fillna(0.0).to_numpy(dtype=float)
+                    + lt_current_num.loc[fill_mask].fillna(0.0).to_numpy(dtype=float)
+                )
+            result = result.drop(columns=["lt_noncurrent", "lt_current"])
+
+        result = result.drop(columns=["report_date_str"])
+        result["source"] = "edgar"
+        result["currency"] = "USD"
+
+        # EDGAR net_income and eps are often YTD for 10-Qs; convert to standalone quarters.
+        result = result.sort_values(["fiscal_year", "fiscal_quarter"])
+        for field in ["net_income", "eps"]:
+            if field not in result.columns:
+                continue
+            standalone = []
+            for _, group in result.groupby("fiscal_year", sort=False):
+                group = group.sort_values("fiscal_quarter")
+                prev_cumulative = 0
+                for quarter, value in zip(
+                    group["fiscal_quarter"].tolist(),
+                    group[field].tolist(),
+                ):
+                    if value is None or pd.isna(value):
+                        standalone.append(value)
+                        prev_cumulative = 0
+                    elif int(quarter) == 4:
+                        standalone.append(value - prev_cumulative)
+                        prev_cumulative = 0
+                    else:
+                        standalone.append(value - prev_cumulative)
+                        prev_cumulative = value
+            result[field] = standalone
+
+        numeric_cols = [
+            "total_assets",
+            "total_equity",
+            "total_debt",
+            "book_value_equity",
+            "shares_outstanding",
+            "net_income",
+            "eps",
+        ]
+        for col in numeric_cols:
+            if col in result.columns:
+                result[col] = pd.to_numeric(result[col], errors="coerce")
+
+        result["report_date"] = pd.to_datetime(result["report_date"], errors="coerce")
+        result = self._ensure_fundamentals_schema(result)
+        result = result.dropna(subset=["fiscal_year", "fiscal_quarter", "report_date"])
+        result = result.sort_values("report_date", ascending=False)
+        result = result.drop_duplicates(
+            subset=["symbol", "fiscal_year", "fiscal_quarter"],
+            keep="first",
+        )
+        return result.reset_index(drop=True)
+
+    @staticmethod
+    def _period_years(period, default_years=5):
+        """Parse period string ('5y', 'max') to integer years or None."""
+        p = (period or f"{default_years}y").strip().lower()
+        if p == "max":
+            return None
+        if p.endswith("y"):
+            try:
+                years = int(p[:-1])
+                if years > 0:
+                    return years
+            except ValueError:
+                pass
+        return default_years
+
+    def _edgar_get_cik(self, symbol):
+        """Get 10-digit CIK for a ticker using SEC's company tickers file."""
+        if self._edgar_ticker_to_cik is None:
+            payload = self._edgar_get_json("https://www.sec.gov/files/company_tickers.json")
+            mapping = {}
+            if isinstance(payload, dict):
+                for entry in payload.values():
+                    ticker = str(entry.get("ticker", "")).strip().upper()
+                    cik = entry.get("cik_str")
+                    if ticker and cik is not None:
+                        mapping[ticker] = str(cik).zfill(10)
+            self._edgar_ticker_to_cik = mapping
+        return self._edgar_ticker_to_cik.get(str(symbol).strip().upper())
+
+    def _edgar_get_fiscal_periods(self, cik, cutoff=None):
+        """Build fiscal-year/quarter index from EDGAR submissions reportDate."""
+        url = f"https://data.sec.gov/submissions/CIK{cik}.json"
+        payload = self._edgar_get_json(url)
+        filings = (payload or {}).get("filings", {}).get("recent", {})
+        df = pd.DataFrame(
+            {
+                "form": filings.get("form", []),
+                "report_date": filings.get("reportDate", []),
+                "filed": filings.get("filingDate", []),
             }
-
-        inc_reports = (inc_payload or {}).get("quarterlyReports", [])
-        for report in inc_reports:
-            fiscal_date = report.get("fiscalDateEnding")
-            if not fiscal_date:
-                continue
-            key = pd.Timestamp(fiscal_date)
-            if key not in rows:
-                rows[key] = {
-                    "symbol": symbol,
-                    "fiscal_year": key.year,
-                    "fiscal_quarter": int(key.quarter),
-                    "report_date": key,
-                    "currency": report.get("reportedCurrency"),
-                    "total_assets": None,
-                    "total_equity": None,
-                    "total_debt": None,
-                    "book_value_equity": None,
-                    "shares_outstanding": None,
-                    "net_income": None,
-                    "eps": None,
-                    "source": "alphavantage",
-                }
-            rows[key]["net_income"] = self._to_float(report.get("netIncome"))
-            rows[key]["eps"] = self._coalesce_numeric(
-                report.get("reportedEPS"),
-                report.get("dilutedEPS"),
+        )
+        if df.empty:
+            return pd.DataFrame(
+                columns=["report_date_str", "report_date", "fiscal_year", "fiscal_quarter"]
             )
 
-        earnings_rows = (earnings_payload or {}).get("quarterlyEarnings", [])
-        for report in earnings_rows:
-            fiscal_date = report.get("fiscalDateEnding")
-            if not fiscal_date:
+        df = df[df["form"].isin(["10-Q", "10-K"])].copy()
+        df["report_date"] = pd.to_datetime(df["report_date"], errors="coerce")
+        df["filed"] = pd.to_datetime(df["filed"], errors="coerce")
+        df = df.dropna(subset=["report_date"]).sort_values("report_date").reset_index(drop=True)
+        if cutoff is not None:
+            cutoff = pd.Timestamp(cutoff).tz_localize(None)
+            df = df[df["report_date"] >= cutoff]
+        if df.empty:
+            return pd.DataFrame(
+                columns=["report_date_str", "report_date", "fiscal_year", "fiscal_quarter"]
+            )
+
+        tenk_rows = df[df["form"] == "10-K"].sort_values("report_date")
+        year_counts = {}
+        for _, row in tenk_rows.iterrows():
+            year = int(row["report_date"].year)
+            year_counts[year] = year_counts.get(year, 0) + 1
+
+        year_seen = {}
+        tenk_anchors = []
+        for _, row in tenk_rows.iterrows():
+            year = int(row["report_date"].year)
+            year_seen[year] = year_seen.get(year, 0) + 1
+            if year_counts.get(year, 0) > 1:
+                label = year if year_seen[year] == year_counts[year] else year - 1
+            else:
+                label = year - 1 if int(row["report_date"].month) <= 6 else year
+            tenk_anchors.append((row["report_date"], label))
+        tenk_anchor_dates = [item[0] for item in tenk_anchors]
+
+        def fiscal_year_for_row(report_date):
+            future = [(d, lbl) for d, lbl in tenk_anchors if d >= report_date]
+            if future:
+                return min(future, key=lambda x: x[0])[1]
+            if tenk_anchors:
+                return tenk_anchors[-1][1] + 1
+            return int(report_date.year)
+
+        df["fiscal_year"] = df["report_date"].apply(fiscal_year_for_row)
+        df["fiscal_quarter"] = None
+        for fiscal_year, group in df.groupby("fiscal_year"):
+            anchors = [(d, lbl) for d, lbl in tenk_anchors if lbl == fiscal_year]
+            if anchors:
+                fiscal_year_end = max(anchors, key=lambda x: x[0])[0]
+                prev = [d for d in tenk_anchor_dates if d < fiscal_year_end]
+                fiscal_year_start = max(prev) if prev else pd.Timestamp("1900-01-01")
+            else:
+                fiscal_year_end = pd.Timestamp("2999-12-31")
+                fiscal_year_start = pd.Timestamp("1900-01-01")
+
+            quarters = group[
+                (group["form"] == "10-Q")
+                & (group["report_date"] > fiscal_year_start)
+                & (group["report_date"] <= fiscal_year_end)
+            ].sort_values("report_date")
+            for index, row_index in enumerate(quarters.index):
+                if index < 3:
+                    df.loc[row_index, "fiscal_quarter"] = index + 1
+            df.loc[group[group["form"] == "10-K"].index, "fiscal_quarter"] = 4
+
+        df = df.dropna(subset=["fiscal_quarter"]).copy()
+        if df.empty:
+            return pd.DataFrame(
+                columns=["report_date_str", "report_date", "fiscal_year", "fiscal_quarter"]
+            )
+        df["fiscal_quarter"] = pd.to_numeric(df["fiscal_quarter"], errors="coerce").astype("Int64")
+        df["report_date_str"] = df["report_date"].dt.strftime("%Y-%m-%d")
+        return df[
+            ["report_date_str", "report_date", "fiscal_year", "fiscal_quarter"]
+        ].reset_index(drop=True)
+
+    def _edgar_fetch_concept(self, cik, tag, unit="USD", cutoff=None):
+        """Fetch EDGAR concept values keyed by period end date."""
+        url = f"https://data.sec.gov/api/xbrl/companyconcept/CIK{cik}/us-gaap/{tag}.json"
+        payload = self._edgar_get_json(url, allow_not_found=True)
+        if not payload:
+            return pd.DataFrame(columns=["end", "start", "val", "filed"])
+
+        rows = []
+        for row in (payload.get("units", {}) or {}).get(unit, []):
+            if row.get("form") not in ("10-Q", "10-K"):
                 continue
-            key = pd.Timestamp(fiscal_date)
-            if key not in rows:
-                rows[key] = {
-                    "symbol": symbol,
-                    "fiscal_year": key.year,
-                    "fiscal_quarter": int(key.quarter),
-                    "report_date": key,
-                    "currency": None,
-                    "total_assets": None,
-                    "total_equity": None,
-                    "total_debt": None,
-                    "book_value_equity": None,
-                    "shares_outstanding": None,
-                    "net_income": None,
-                    "eps": None,
-                    "source": "alphavantage",
+            end = row.get("end")
+            if not end:
+                continue
+            end_ts = pd.to_datetime(end, errors="coerce")
+            if pd.isna(end_ts):
+                continue
+            if cutoff is not None and end_ts < pd.Timestamp(cutoff):
+                continue
+            rows.append(
+                {
+                    "end": end,
+                    "start": row.get("start"),
+                    "val": row.get("val"),
+                    "filed": row.get("filed"),
                 }
-            if rows[key].get("eps") is None:
-                rows[key]["eps"] = self._to_float(report.get("reportedEPS"))
-
+            )
         if not rows:
-            return pd.DataFrame()
+            return pd.DataFrame(columns=["end", "start", "val", "filed"])
 
-        df = pd.DataFrame(list(rows.values()))
+        out = pd.DataFrame(rows)
+        out["filed"] = pd.to_datetime(out["filed"], errors="coerce")
+        out = out.sort_values("filed", ascending=False).drop_duplicates("end", keep="first")
+        return out[["end", "start", "val", "filed"]].reset_index(drop=True)
 
-        # For Alpha Vantage rows, treat book value equity as total equity.
-        df["book_value_equity"] = df["book_value_equity"].fillna(df["total_equity"])
-        df["report_date"] = pd.to_datetime(df["report_date"])
-        return df.sort_values("report_date", ascending=False).reset_index(drop=True)
+    def _edgar_get_json(
+        self, url, params=None, timeout=30, max_retries=3, allow_not_found=False
+    ):
+        """Call SEC EDGAR endpoints with throttling and retry."""
+        headers = {"User-Agent": self.edgar_user_agent}
+        for attempt in range(max_retries):
+            try:
+                self._edgar_throttle_wait()
+                response = requests.get(
+                    url, params=params, headers=headers, timeout=timeout
+                )
+            except requests.RequestException as exc:
+                logger.warning("EDGAR request failed (%s): %s", url, exc)
+                sleep(1.5)
+                continue
+
+            if allow_not_found and response.status_code == 404:
+                return None
+
+            if response.status_code == 429:
+                retry_after = response.headers.get("Retry-After")
+                sleep_for = 1.0
+                if retry_after:
+                    try:
+                        sleep_for = float(retry_after)
+                    except ValueError:
+                        sleep_for = 1.0
+                logger.warning("EDGAR rate limited (429) for %s; sleeping %.1fs", url, sleep_for)
+                sleep(sleep_for)
+                continue
+
+            if response.status_code >= 500:
+                logger.warning(
+                    "EDGAR server error HTTP %s for %s",
+                    response.status_code,
+                    url,
+                )
+                sleep(1.5 * (attempt + 1))
+                continue
+
+            if response.status_code != 200:
+                logger.warning(
+                    "EDGAR request failed HTTP %s for %s",
+                    response.status_code,
+                    url,
+                )
+                return None
+
+            try:
+                return response.json()
+            except ValueError:
+                logger.warning("EDGAR returned non-JSON payload for %s", url)
+                return None
+
+        logger.warning("EDGAR unavailable after retries: %s", url)
+        return None
+
+    def _edgar_throttle_wait(self):
+        """Ensure SEC request spacing (default 2 requests per second)."""
+        with self._edgar_rate_limit_lock:
+            elapsed = monotonic() - self._edgar_last_request_ts
+            if elapsed < self._edgar_min_interval_seconds:
+                sleep(self._edgar_min_interval_seconds - elapsed)
+            self._edgar_last_request_ts = monotonic()
 
     def _fetch_simfin_fundamentals(self, symbol):
         """Fetch quarterly fundamentals from SimFin statements + shares."""
@@ -919,7 +1504,7 @@ class DataFetcher:
             if col in out.columns:
                 out[col] = pd.to_numeric(out[col], errors="coerce")
 
-        out["currency"] = None
+        out["currency"] = "USD"
         out["source"] = "simfin"
         out = self._ensure_fundamentals_schema(out)
         out = out.dropna(subset=["fiscal_year", "fiscal_quarter"])
@@ -949,14 +1534,13 @@ class DataFetcher:
 
                 if status_code == 500:
                     logger.warning(
-                        "SimFin returned HTTP 500 (no retry) "
+                        "SimFin returned HTTP 500 "
                         "(%s, params=%s)",
                         url,
                         params,
                     )
-                    raise SimFinServerError(
-                        f"SimFin HTTP 500 for {url} params={params}"
-                    )
+                    sleep(1.5)
+                    continue
 
                 if status_code == 429:
                     logger.warning(
@@ -1083,85 +1667,6 @@ class DataFetcher:
             return q if q in (1, 2, 3, 4) else None
         except (TypeError, ValueError):
             return None
-
-    def _alpha_vantage_get(self, function_name, symbol, max_retries=3):
-        """Call Alpha Vantage API with basic retry for rate limits."""
-        params = {
-            "function": function_name,
-            "symbol": symbol,
-            "apikey": self.alpha_vantage_api_key,
-        }
-
-        for attempt in range(max_retries):
-            try:
-                self._alpha_vantage_throttle_wait()
-                response = requests.get(
-                    ALPHA_VANTAGE_BASE_URL, params=params, timeout=20
-                )
-                response.raise_for_status()
-                payload = response.json()
-            except requests.RequestException as exc:
-                logger.warning(
-                    "Alpha Vantage request failed for %s (%s): %s",
-                    symbol,
-                    function_name,
-                    exc,
-                )
-                sleep(2.0)
-                continue
-
-            if "Error Message" in payload:
-                logger.warning(
-                    "Alpha Vantage error for %s (%s): %s",
-                    symbol,
-                    function_name,
-                    payload["Error Message"],
-                )
-                return None
-
-            if "Note" in payload:
-                logger.warning(
-                    "Alpha Vantage rate limit hit for %s (%s), retrying...",
-                    symbol,
-                    function_name,
-                )
-                sleep(2 * (attempt + 1))
-                continue
-
-            return payload
-
-        logger.warning(
-            "Alpha Vantage unavailable for %s (%s) after retries",
-            symbol,
-            function_name,
-        )
-        return None
-
-    def _alpha_vantage_throttle_wait(self):
-        """Ensure minimum spacing between Alpha Vantage API calls."""
-        with self._av_rate_limit_lock:
-            elapsed = monotonic() - self._av_last_request_ts
-            if elapsed < self._av_min_interval_seconds:
-                sleep(self._av_min_interval_seconds - elapsed)
-            self._av_last_request_ts = monotonic()
-
-    @staticmethod
-    def _to_float(value):
-        """Parse API numeric values safely."""
-        if value in (None, "", "None", "null"):
-            return None
-        try:
-            return float(str(value).replace(",", ""))
-        except (TypeError, ValueError):
-            return None
-
-    def _coalesce_numeric(self, *values):
-        """Return first successfully parsed numeric value."""
-        for value in values:
-            parsed = self._to_float(value)
-            if parsed is not None:
-                return parsed
-        return None
 
     @staticmethod
     def _ensure_fundamentals_schema(df):
