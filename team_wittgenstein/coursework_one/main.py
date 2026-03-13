@@ -144,6 +144,25 @@ def main():
 
     logger.info("Universe loaded: %d symbols | %d countries", len(symbols), len(countries))
 
+    # Exclude known-bad symbols (delisted, renamed, broken tickers)
+    exclude = set(cfg.get("exclude_symbols") or [])
+    if exclude:
+        before = len(symbols)
+        symbols = [s for s in symbols if s not in exclude]
+        logger.info("Excluded %d known-bad symbols: %d → %d", before - len(symbols), before, len(symbols))
+
+    # Normalise dot-delimited tickers to dashes (e.g. BRK.B → BRK-B)
+    # Most financial APIs (yfinance, EDGAR, SimFin) use dashes not dots
+    normalised = []
+    for s in symbols:
+        if "." in s:
+            fixed = s.replace(".", "-")
+            logger.info("Ticker normalised: %s → %s", s, fixed)
+            normalised.append(fixed)
+        else:
+            normalised.append(s)
+    symbols = normalised
+
     # Dev mode: slice symbol list to avoid hitting API rate limits
     dev_cfg = cfg.get("dev", {})
     if dev_cfg.get("enabled", False):

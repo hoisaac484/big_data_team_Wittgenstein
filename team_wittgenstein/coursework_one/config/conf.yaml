@@ -24,6 +24,30 @@ data:
 # US-only strategy: only fetch data for US-listed companies
 country_filter: "US"
 
+# Symbols to exclude from the pipeline (delisted, renamed, or broken tickers)
+exclude_symbols:
+  # Acquired / merged — no longer trading
+  - ATVI   # Activision → acquired by Microsoft
+  - ABMD   # Abiomed → acquired by J&J
+  - AGN    # Allergan → acquired by AbbVie
+  - ALXN   # Alexion → acquired by AstraZeneca
+  - CELG   # Celgene → acquired by Bristol-Myers Squibb
+  # Renamed — old ticker no longer resolves
+  - ANTM   # → ELV (Elevance Health)
+  - ADS    # → BFH (Bread Financial)
+  - ABC    # → COR (Cencora)
+  - COG    # → CTRA (Coterra Energy)
+  - ARNC   # → HWM (Howmet Aerospace)
+  - CBS    # → PARA (Paramount)
+  - BHGE   # → BKR (Baker Hughes)
+  - APC    # → OXY (Occidental Petroleum)
+  # Renamed ticker (symbol change)
+  - BLL    # → BALL (Ball Corp, renamed May 2022)
+  - XEC    # Cimarex → merged into CTRA (Coterra Energy)
+  - CTL    # CenturyLink → renamed LUMN (Lumen Technologies)
+  - CERN   # Cerner → acquired by Oracle
+  - ANSS   # ANSYS — delisted/unresolvable on yfinance
+
 validation:
   min_price_rows: 200
   min_years: 4
@@ -34,4 +58,4 @@ validation:
 # Set enabled: false for a full production run.
 dev:
   enabled: true
-  max_symbols: 3
+  max_symbols: 100

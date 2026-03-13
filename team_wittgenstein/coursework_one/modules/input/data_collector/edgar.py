@@ -205,11 +205,34 @@ class EdgarMixin:
             ["report_date_str", "report_date", "fiscal_year", "fiscal_quarter"]
         ].reset_index(drop=True)
 
-    def _edgar_fetch_concept(self, cik, tag, unit="USD", cutoff=None):
-        """Fetch a single XBRL concept from EDGAR companyconcept API.
+    def _edgar_fetch_company_facts(self, cik):
+        """Fetch all XBRL facts for a company in a single request.
+
+        Uses the SEC EDGAR companyfacts bulk endpoint which returns every
+        concept the company has ever filed, avoiding per-concept HTTP calls.
 
         Args:
             cik: 10-digit CIK string.
+
+        Returns:
+            dict or None: The 'facts' -> 'us-gaap' dict keyed by concept tag,
+                or None on failure.
+        """
+        url = f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
+        payload = self._edgar_get_json(url, allow_not_found=True)
+        if not payload:
+            return None
+        return (payload.get("facts") or {}).get("us-gaap")
+
+    @staticmethod
+    def _extract_concept(facts, tag, unit="USD", cutoff=None):
+        """Extract a single XBRL concept from in-memory company facts.
+
+        Same filtering logic as the old per-concept HTTP call: filter by
+        form (10-Q/10-K), dedupe by end date, apply cutoff.
+
+        Args:
+            facts: The us-gaap dict from _edgar_fetch_company_facts().
             tag: XBRL concept tag (e.g. 'Assets', 'NetIncomeLoss').
             unit: Unit key (e.g. 'USD', 'shares', 'USD/shares').
             cutoff: Optional earliest end date to include.
@@ -218,16 +241,16 @@ class EdgarMixin:
             pd.DataFrame with columns: end, start, val, filed.
         """
         empty = pd.DataFrame(columns=["end", "start", "val", "filed"])
-        url = (
-            f"https://data.sec.gov/api/xbrl/companyconcept/"
-            f"CIK{cik}/us-gaap/{tag}.json"
-        )
-        payload = self._edgar_get_json(url, allow_not_found=True)
-        if not payload:
+        if not facts or tag not in facts:
+            return empty
+
+        concept_data = facts[tag]
+        unit_rows = (concept_data.get("units") or {}).get(unit, [])
+        if not unit_rows:
             return empty
 
         rows = []
-        for row in (payload.get("units", {}) or {}).get(unit, []):
+        for row in unit_rows:
             if row.get("form") not in ("10-Q", "10-K"):
                 continue
             end = row.get("end")
@@ -257,11 +280,14 @@ class EdgarMixin:
         return out[["end", "start", "val", "filed"]].reset_index(drop=True)
 
     def _fetch_edgar_fundamentals(self, symbol, period="5y"):
-        """Fetch quarterly fundamentals from SEC EDGAR per-concept APIs.
+        """Fetch quarterly fundamentals from SEC EDGAR using bulk companyfacts.
 
-        Uses the submissions API for accurate fiscal period detection and
-        the companyconcept API for each financial field with fallback chains.
-        Converts cumulative YTD figures to standalone quarterly values.
+        Makes 3 HTTP requests per symbol (ticker map, submissions,
+        companyfacts) instead of ~10-15 per-concept requests. Uses the
+        submissions API for fiscal period detection and the companyfacts
+        bulk endpoint for all financial fields, with in-memory fallback
+        chains. Converts cumulative YTD figures to standalone quarterly
+        values.
 
         Args:
             symbol: Stock ticker symbol.
@@ -286,12 +312,18 @@ class EdgarMixin:
         if periods.empty:
             return pd.DataFrame()
 
+        # Fetch ALL concepts in one bulk request
+        facts = self._edgar_fetch_company_facts(cik)
+        if not facts:
+            logger.warning("No companyfacts for %s (CIK %s).", symbol, cik)
+            return pd.DataFrame()
+
         result = periods.copy()
         result["symbol"] = symbol
 
         def merge_field(tag, field, unit="USD"):
             nonlocal result
-            concept = self._edgar_fetch_concept(cik, tag, unit=unit, cutoff=cutoff)
+            concept = self._extract_concept(facts, tag, unit=unit, cutoff=cutoff)
             if concept.empty:
                 result[field] = None
                 return
@@ -302,101 +334,53 @@ class EdgarMixin:
                 how="left",
             )
 
+        def fill_nulls(field, tag, unit="USD"):
+            """Fill null values in field from a fallback concept tag."""
+            nonlocal result
+            if field not in result.columns or not result[field].isna().any():
+                return
+            fb = self._extract_concept(facts, tag, unit=unit, cutoff=cutoff)
+            if fb.empty:
+                return
+            fb = fb.rename(columns={"val": "_fb", "end": "report_date_str"})
+            result = result.merge(
+                fb[["report_date_str", "_fb"]],
+                on="report_date_str",
+                how="left",
+            )
+            mask = result[field].isna() & result["_fb"].notna()
+            result.loc[mask, field] = result.loc[mask, "_fb"]
+            result = result.drop(columns=["_fb"])
+
         # --- total_assets ---
         merge_field("Assets", "total_assets")
 
         # --- net_income (with ProfitLoss fallback) ---
         merge_field("NetIncomeLoss", "net_income")
-        if "net_income" in result.columns and result["net_income"].isna().any():
-            fallback = self._edgar_fetch_concept(
-                cik, "ProfitLoss", unit="USD", cutoff=cutoff
-            )
-            if not fallback.empty:
-                fallback = fallback.rename(
-                    columns={"val": "_ni_fb", "end": "report_date_str"}
-                )
-                result = result.merge(
-                    fallback[["report_date_str", "_ni_fb"]],
-                    on="report_date_str",
-                    how="left",
-                )
-                mask = result["net_income"].isna() & result["_ni_fb"].notna()
-                result.loc[mask, "net_income"] = result.loc[mask, "_ni_fb"]
-                result = result.drop(columns=["_ni_fb"])
+        fill_nulls("net_income", "ProfitLoss")
 
         # --- book_equity (with broader equity concept fallback) ---
-        eq_primary = self._edgar_fetch_concept(
-            cik,
+        merge_field(
             "StockholdersEquityIncludingPortionAttributable" "ToNoncontrollingInterest",
-            unit="USD",
-            cutoff=cutoff,
+            "book_equity",
         )
-        eq_fallback = self._edgar_fetch_concept(
-            cik,
-            "StockholdersEquity",
-            unit="USD",
-            cutoff=cutoff,
-        )
-        if not eq_primary.empty:
-            eq_df = eq_primary.rename(
-                columns={"val": "book_equity", "end": "report_date_str"}
-            )
-            result = result.merge(
-                eq_df[["report_date_str", "book_equity"]],
-                on="report_date_str",
-                how="left",
-            )
-        else:
-            result["book_equity"] = None
-        if not eq_fallback.empty and result["book_equity"].isna().any():
-            eq_fb = eq_fallback.rename(
-                columns={"val": "_eq_fb", "end": "report_date_str"}
-            )
-            result = result.merge(
-                eq_fb[["report_date_str", "_eq_fb"]],
-                on="report_date_str",
-                how="left",
-            )
-            mask = result["book_equity"].isna() & result["_eq_fb"].notna()
-            result.loc[mask, "book_equity"] = result.loc[mask, "_eq_fb"]
-            result = result.drop(columns=["_eq_fb"])
+        fill_nulls("book_equity", "StockholdersEquity")
 
         # --- shares_outstanding (two concept fallbacks) ---
-        result["shares_outstanding"] = None
-        for tag in [
-            "CommonStockSharesOutstanding",
+        merge_field("CommonStockSharesOutstanding", "shares_outstanding", unit="shares")
+        fill_nulls(
+            "shares_outstanding",
             "WeightedAverageNumberOfDilutedSharesOutstanding",
-        ]:
-            if not result["shares_outstanding"].isna().any():
-                break
-            shares = self._edgar_fetch_concept(cik, tag, unit="shares", cutoff=cutoff)
-            if shares.empty:
-                continue
-            shares = shares.rename(
-                columns={"val": "_shares_tmp", "end": "report_date_str"}
-            )
-            result = result.merge(
-                shares[["report_date_str", "_shares_tmp"]],
-                on="report_date_str",
-                how="left",
-            )
-            mask = result["shares_outstanding"].isna() & result["_shares_tmp"].notna()
-            result.loc[mask, "shares_outstanding"] = result.loc[mask, "_shares_tmp"]
-            result = result.drop(columns=["_shares_tmp"])
+            unit="shares",
+        )
 
         # --- eps (diluted with basic fallback) ---
-        eps_df = self._edgar_fetch_concept(
-            cik,
-            "EarningsPerShareDiluted",
-            unit="USD/shares",
-            cutoff=cutoff,
+        eps_df = self._extract_concept(
+            facts, "EarningsPerShareDiluted", unit="USD/shares", cutoff=cutoff
         )
         if eps_df.empty:
-            eps_df = self._edgar_fetch_concept(
-                cik,
-                "EarningsPerShareBasic",
-                unit="USD/shares",
-                cutoff=cutoff,
+            eps_df = self._extract_concept(
+                facts, "EarningsPerShareBasic", unit="USD/shares", cutoff=cutoff
             )
         if not eps_df.empty:
             eps_df = eps_df.copy()
@@ -418,38 +402,14 @@ class EdgarMixin:
 
         # --- total_debt (3-tier fallback) ---
         merge_field("LongTermDebt", "total_debt")
-        if result["total_debt"].isna().any():
-            debt_lease = self._edgar_fetch_concept(
-                cik,
-                "LongTermDebtAndCapitalLeaseObligations",
-                unit="USD",
-                cutoff=cutoff,
-            )
-            if not debt_lease.empty:
-                debt_lease = debt_lease.rename(
-                    columns={"val": "_dl", "end": "report_date_str"}
-                )
-                result = result.merge(
-                    debt_lease[["report_date_str", "_dl"]],
-                    on="report_date_str",
-                    how="left",
-                )
-                mask = result["total_debt"].isna() & result["_dl"].notna()
-                result.loc[mask, "total_debt"] = result.loc[mask, "_dl"]
-                result = result.drop(columns=["_dl"])
+        fill_nulls("total_debt", "LongTermDebtAndCapitalLeaseObligations")
 
-        if result["total_debt"].isna().any():
-            lt_nc = self._edgar_fetch_concept(
-                cik,
-                "LongTermDebtNoncurrent",
-                unit="USD",
-                cutoff=cutoff,
+        if "total_debt" in result.columns and result["total_debt"].isna().any():
+            lt_nc = self._extract_concept(
+                facts, "LongTermDebtNoncurrent", unit="USD", cutoff=cutoff
             )
-            lt_c = self._edgar_fetch_concept(
-                cik,
-                "LongTermDebtCurrent",
-                unit="USD",
-                cutoff=cutoff,
+            lt_c = self._extract_concept(
+                facts, "LongTermDebtCurrent", unit="USD", cutoff=cutoff
             )
             if not lt_nc.empty:
                 lt_nc = lt_nc.rename(columns={"val": "_nc", "end": "report_date_str"})

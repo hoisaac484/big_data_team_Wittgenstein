@@ -60,7 +60,7 @@ class FundamentalsMixin:
         )
 
         if to_refresh:
-            fetched, failed = self._parallel_fetch_fundamentals(
+            fetched, failed = self._sequential_fetch_fundamentals(
                 to_refresh,
                 period,
                 source,
@@ -81,7 +81,7 @@ class FundamentalsMixin:
         out = self._dedupe_dataframe("fundamentals", out)
         return out
 
-    def _parallel_fetch_fundamentals(
+    def _sequential_fetch_fundamentals(
         self,
         symbols,
         period,
