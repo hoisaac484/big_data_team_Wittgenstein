@@ -7,17 +7,18 @@ coursework data pipeline.
 import io
 import json
 import logging
+from pathlib import Path
+import re
 
 import pandas as pd
 from minio import Minio
 from minio.error import S3Error
 from pymongo import MongoClient
-from sqlalchemy import MetaData, Table, create_engine, text
+from sqlalchemy import MetaData, Table, bindparam, create_engine, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-import re
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
+TEAM_SCHEMA = "team_wittgenstein"
 
 
 class PostgresConnection:
@@ -125,6 +126,84 @@ class PostgresConnection:
         """
         query = "SELECT * FROM systematic_equity.company_static"
         return self.read_query(query)
+
+    def get_managed_symbol_tables(self, schema=TEAM_SCHEMA):
+        """Return tables in the managed schema that include a symbol column."""
+        query = """
+            SELECT table_name
+            FROM information_schema.columns
+            WHERE table_schema = :schema
+              AND column_name = 'symbol'
+            ORDER BY table_name
+        """
+        tables = self.read_query(query, params={"schema": schema})
+        if tables is None or tables.empty:
+            return []
+        return tables["table_name"].astype(str).tolist()
+
+    def get_tracked_symbols(self, schema=TEAM_SCHEMA):
+        """Return distinct symbols currently present in managed tables."""
+        symbols = set()
+        for table_name in self.get_managed_symbol_tables(schema=schema):
+            df = self.read_query(
+                f"SELECT DISTINCT symbol FROM {schema}.{table_name}"
+            )
+            if df is None or df.empty or "symbol" not in df.columns:
+                continue
+            values = (
+                df["symbol"].dropna().astype(str).str.strip()
+            )
+            symbols.update(v for v in values if v)
+        return sorted(symbols)
+
+    def delete_symbol_data(self, symbols, schema=TEAM_SCHEMA):
+        """Delete symbols from all managed schema tables that carry a symbol."""
+        cleaned = sorted(
+            {
+                str(symbol).strip()
+                for symbol in (symbols or [])
+                if str(symbol).strip()
+            }
+        )
+        if not cleaned:
+            return 0
+
+        tables = self.get_managed_symbol_tables(schema=schema)
+        if not tables:
+            return 0
+
+        stmt_cache = {}
+        with self.engine.begin() as conn:
+            for table_name in tables:
+                stmt = stmt_cache.get(table_name)
+                if stmt is None:
+                    stmt = text(
+                        f"DELETE FROM {schema}.{table_name} "
+                        f"WHERE symbol IN :symbols"
+                    ).bindparams(bindparam("symbols", expanding=True))
+                    stmt_cache[table_name] = stmt
+                conn.execute(stmt, {"symbols": cleaned})
+
+        logger.info(
+            "Deleted %d symbols from %d managed tables",
+            len(cleaned),
+            len(tables),
+        )
+        return len(cleaned)
+
+    def delete_symbols_missing_from_company_list(self, current_symbols):
+        """Delete managed data for symbols no longer present in company_static."""
+        current = {
+            str(symbol).strip()
+            for symbol in (current_symbols or [])
+            if str(symbol).strip()
+        }
+        tracked = set(self.get_tracked_symbols())
+        removed = sorted(tracked - current)
+        if not removed:
+            return []
+        self.delete_symbol_data(removed)
+        return removed
 
     def test_connection(self):
         """Test the database connection.
@@ -368,6 +447,17 @@ class MinioConnection:
             return True
         except S3Error:
             return False
+
+    def delete_object(self, bucket, object_name):
+        """Delete an object if it exists in the bucket."""
+        try:
+            self.client.remove_object(bucket, object_name)
+            logger.info("Deleted %s/%s", bucket, object_name)
+            return True
+        except S3Error as e:
+            if e.code == "NoSuchKey":
+                return False
+            raise
 
     def test_connection(self):
         """Test the MinIO connection.

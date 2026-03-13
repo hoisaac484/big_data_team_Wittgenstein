@@ -322,7 +322,31 @@ class DataFetcher:
                 self.bucket, self._ctl_path(data_type, cache_name), ctl
             )
 
-   
+    def delete_symbol_cache(self, symbol):
+        """Delete cached price and fundamentals objects for a symbol."""
+        removed = 0
+        symbol = str(symbol).strip()
+        if not symbol:
+            return removed
+
+        for data_type in ("prices", "fundamentals"):
+            for object_name in (
+                self._parquet_path(data_type, symbol),
+                self._ctl_path(data_type, symbol),
+            ):
+                if self.minio.delete_object(self.bucket, object_name):
+                    removed += 1
+
+        for object_name in self.minio.list_objects(
+            self.bucket, prefix=f"fundamentals/{symbol}."
+        ):
+            if self.minio.delete_object(self.bucket, object_name):
+                removed += 1
+
+        if removed > 0:
+            logger.info("Deleted %d cached objects for %s", removed, symbol)
+        return removed
+
     # ================================================================
     # Failure classification
     # ================================================================

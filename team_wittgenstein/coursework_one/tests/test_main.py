@@ -111,6 +111,7 @@ class TestMain:
             "symbol": ["AAPL", "MSFT"],
             "country": ["US", "US"],
         })
+        mock_pg.delete_symbols_missing_from_company_list.return_value = ["STALE"]
         mock_pg_cls.return_value = mock_pg
 
         mock_mongo = MagicMock()
@@ -163,6 +164,7 @@ class TestMain:
         main()
 
         mock_fetcher.fetch_prices.assert_called_once()
+        mock_fetcher.delete_symbol_cache.assert_called_once_with("STALE")
         mock_validator.clean_prices.assert_called_once()
         mock_validator.validate_all.assert_called_once()
         mock_writer.write_prices.assert_called_once()
@@ -185,6 +187,7 @@ class TestMain:
         mock_pg.get_company_list.return_value = pd.DataFrame({
             "symbol": ["AAPL"], "country": ["US"],
         })
+        mock_pg.delete_symbols_missing_from_company_list.return_value = []
         mock_pg_cls.return_value = mock_pg
 
         mock_mongo = MagicMock()

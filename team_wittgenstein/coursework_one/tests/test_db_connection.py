@@ -134,6 +134,48 @@ class TestPostgresConnection:
             assert "symbol" in result.columns
 
     @patch("modules.db.db_connection.create_engine")
+    def test_get_managed_symbol_tables(self, mock_create_engine):
+        mock_create_engine.return_value = MagicMock()
+        pg = PostgresConnection("localhost", 5432, "fift", "user", "pass")
+        with patch.object(
+            pg,
+            "read_query",
+            return_value=pd.DataFrame({"table_name": ["price_data", "financial_data"]}),
+        ):
+            assert pg.get_managed_symbol_tables() == ["price_data", "financial_data"]
+
+    @patch("modules.db.db_connection.create_engine")
+    def test_get_tracked_symbols(self, mock_create_engine):
+        mock_create_engine.return_value = MagicMock()
+        pg = PostgresConnection("localhost", 5432, "fift", "user", "pass")
+        with patch.object(
+            pg,
+            "get_managed_symbol_tables",
+            return_value=["price_data", "financial_data"],
+        ), patch.object(
+            pg,
+            "read_query",
+            side_effect=[
+                pd.DataFrame({"symbol": ["AAPL", "MSFT"]}),
+                pd.DataFrame({"symbol": ["MSFT", "GOOG"]}),
+            ],
+        ):
+            assert pg.get_tracked_symbols() == ["AAPL", "GOOG", "MSFT"]
+
+    @patch("modules.db.db_connection.create_engine")
+    def test_delete_symbols_missing_from_company_list(self, mock_create_engine):
+        mock_create_engine.return_value = MagicMock()
+        pg = PostgresConnection("localhost", 5432, "fift", "user", "pass")
+        with patch.object(
+            pg,
+            "get_tracked_symbols",
+            return_value=["AAPL", "MSFT", "SAP"],
+        ), patch.object(pg, "delete_symbol_data") as mock_delete:
+            removed = pg.delete_symbols_missing_from_company_list(["AAPL", "SAP"])
+            assert removed == ["MSFT"]
+            mock_delete.assert_called_once_with(["MSFT"])
+
+    @patch("modules.db.db_connection.create_engine")
     def test_execute_sql_file(self, mock_create_engine, tmp_path):
         mock_engine = MagicMock()
         mock_create_engine.return_value = mock_engine

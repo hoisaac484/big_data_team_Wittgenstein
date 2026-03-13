@@ -12,6 +12,23 @@ from modules.output.data_writer import DataWriter
 logger = logging.getLogger(__name__)
 
 
+def _cleanup_removed_symbols(pg, fetcher, universe):
+    """Delete managed data/cache for symbols no longer in company_static."""
+    symbol_col = "symbol" if "symbol" in universe.columns else "ticker"
+    current_symbols = (
+        universe[symbol_col].dropna().astype(str).str.strip().unique().tolist()
+    )
+    removed_symbols = pg.delete_symbols_missing_from_company_list(current_symbols)
+    for symbol in removed_symbols:
+        fetcher.delete_symbol_cache(symbol)
+    if removed_symbols:
+        logger.warning(
+            "Removed %d stale symbols from managed tables/cache",
+            len(removed_symbols),
+        )
+    return removed_symbols
+
+
 def setup_logging(level: str = "INFO"):
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.INFO),
@@ -80,11 +97,15 @@ def main():
     
     pg.execute_sql_file("sql/create_schema.sql")
 
+    fetcher = DataFetcher(minio)
+    fetcher.cache_ttl_days = cfg.get("data", {}).get("cache_ttl_days")
+
     # ---- Load universe ----------------------------------------------
     # Pull symbols + countries from the existing company universe table
     universe = pg.get_company_list()
     if universe is None or universe.empty:
         raise RuntimeError("company_static is empty or not found.")
+    _cleanup_removed_symbols(pg, fetcher, universe)
 
     # Heuristic column names: adapt if your company_static differs
     # Common variants: symbol / ticker / country / country_code
@@ -131,9 +152,6 @@ def main():
         logger.warning("DEV MODE: limited to %d symbols", max_sym)
 
     # ---- Fetch -------------------------------------------------------
-    fetcher = DataFetcher(minio)
-    fetcher.cache_ttl_days = cfg.get("data", {}).get("cache_ttl_days")
-
     prices_df = fetcher.fetch_prices(symbols, period=cfg.get("data", {}).get("price_period", "5y"))
     fin_df = fetcher.fetch_fundamentals(
         symbols,
