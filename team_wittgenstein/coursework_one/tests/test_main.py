@@ -23,7 +23,10 @@ from modules.processing.data_validator import ValidationResult
 
 def _make_cfg(**overrides):
     cfg = {
-        "postgres": {"host": "h", "port": 5432, "database": "d", "user": "u", "password": "p"},
+        "postgres": {
+            "host": "h", "port": 5432, "database": "d",
+            "user": "u", "password": "p",
+        },
         "mongo": {"host": "h", "port": 27017},
         "minio": {"host": "h", "access_key": "a", "secret_key": "s", "secure": False},
         "logging": {"level": "INFO"},
@@ -33,7 +36,10 @@ def _make_cfg(**overrides):
             "fundamentals_source": "waterfall",
         },
         "country_filter": "US",
-        "validation": {"min_price_rows": 5, "min_years": 1, "max_null_pct": 0.5, "strict": True},
+        "validation": {
+            "min_price_rows": 5, "min_years": 1,
+            "max_null_pct": 0.5, "strict": True,
+        },
         "dev": {"enabled": True, "max_symbols": 2},
         "scheduler": {
             "prices_and_rates": {"day": 1, "hour": 2, "minute": 0},
@@ -66,7 +72,9 @@ def _make_financials():
 
 
 def _make_rates():
-    return pd.DataFrame({"country": ["US"], "rate_date": ["2024-01-01"], "rate": [0.04]})
+    return pd.DataFrame({
+        "country": ["US"], "rate_date": ["2024-01-01"], "rate": [0.04],
+    })
 
 
 def _passed():
@@ -103,7 +111,9 @@ class TestLoadConfig:
         fake_dir = tmp_path / "nonexistent" / "config"
         with patch("main.Path") as mock_path_cls:
             mock_resolved = MagicMock()
-            mock_resolved.parent.__truediv__ = MagicMock(return_value=fake_dir / "conf.yaml")
+            mock_resolved.parent.__truediv__ = MagicMock(
+                return_value=fake_dir / "conf.yaml"
+            )
             mock_path_cls.return_value.resolve.return_value = mock_resolved
             with pytest.raises(FileNotFoundError):
                 load_config()

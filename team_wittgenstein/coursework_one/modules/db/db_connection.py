@@ -143,7 +143,10 @@ class PostgresConnection:
         """Return distinct symbols currently present in managed tables."""
         symbols = set()
         for table_name in self.get_managed_symbol_tables(schema=schema):
-            df = self.read_query(f"SELECT DISTINCT symbol FROM {schema}.{table_name}")  # nosec B608 -- schema/table_name are internal values, not user input
+            # nosec B608 -- schema/table_name are internal values, not user input
+            df = self.read_query(
+                f"SELECT DISTINCT symbol FROM {schema}.{table_name}"
+            )
             if df is None or df.empty or "symbol" not in df.columns:
                 continue
             values = df["symbol"].dropna().astype(str).str.strip()
@@ -167,8 +170,9 @@ class PostgresConnection:
             for table_name in tables:
                 stmt = stmt_cache.get(table_name)
                 if stmt is None:
+                    # nosec B608 -- table_name from internal list; symbols parameterised
                     stmt = text(
-                        f"DELETE FROM {schema}.{table_name} "  # nosec B608 -- table_name from internal managed-tables list; symbol values are parameterised via bindparams
+                        f"DELETE FROM {schema}.{table_name} "
                         f"WHERE symbol IN :symbols"
                     ).bindparams(bindparam("symbols", expanding=True))
                     stmt_cache[table_name] = stmt

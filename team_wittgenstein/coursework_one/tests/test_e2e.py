@@ -14,7 +14,13 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from main import PipelineContext, parse_args, run_fundamentals, run_prices_and_rates, main
+from main import (
+    PipelineContext,
+    parse_args,
+    run_fundamentals,
+    run_prices_and_rates,
+    main,
+)
 from modules.output.data_writer import DataWriter
 from modules.processing.data_validator import DataValidator
 
@@ -85,8 +91,17 @@ def _make_ctx(prices=None, financials=None, rates=None, strict=True):
     rates = rates if rates is not None else _rates_df()
 
     cfg = {
-        "data": {"price_period": "5y", "fundamentals_period": "5y", "fundamentals_source": "waterfall"},
-        "validation": {"min_price_rows": 5, "min_years": 1, "max_null_pct": 0.5, "strict": strict},
+        "data": {
+            "price_period": "5y",
+            "fundamentals_period": "5y",
+            "fundamentals_source": "waterfall",
+        },
+        "validation": {
+            "min_price_rows": 5,
+            "min_years": 1,
+            "max_null_pct": 0.5,
+            "strict": strict,
+        },
         "dev": {"enabled": False},
         "scheduler": {
             "prices_and_rates": {"day": 1, "hour": 2, "minute": 0},
@@ -167,7 +182,7 @@ class TestPipelineE2E:
 
     @patch("main._load_universe", return_value=(["AAPL", "MSFT"], ["US"]))
     def test_valid_financials_pass_validator_and_reach_writer(self, _):
-        """Real validator approves good financials → writer.write_financials called."""
+        """Real validator approves good financials → writer called."""
         ctx = _make_ctx()
         run_fundamentals(ctx)
         ctx.writer.pg.write_dataframe_on_conflict_do_nothing.assert_called()
@@ -196,12 +211,23 @@ class TestPipelineE2E:
             start=pd.Timestamp.now() - pd.DateOffset(months=6),
             end=pd.Timestamp.now(),
         )
-        short_prices = pd.concat([
-            pd.DataFrame({"symbol": s, "trade_date": dates, "open_price": 150.0,
-                          "high_price": 155.0, "low_price": 148.0, "close_price": 152.0,
-                          "adjusted_close": 152.0, "volume": 1_000_000, "currency": "USD"})
-            for s in ("AAPL", "MSFT")
-        ], ignore_index=True)
+        short_prices = pd.concat(
+            [
+                pd.DataFrame({
+                    "symbol": s,
+                    "trade_date": dates,
+                    "open_price": 150.0,
+                    "high_price": 155.0,
+                    "low_price": 148.0,
+                    "close_price": 152.0,
+                    "adjusted_close": 152.0,
+                    "volume": 1_000_000,
+                    "currency": "USD",
+                })
+                for s in ("AAPL", "MSFT")
+            ],
+            ignore_index=True,
+        )
         ctx = _make_ctx(prices=short_prices, strict=False)
         run_prices_and_rates(ctx)
         ctx.writer.pg.write_dataframe.assert_called()
@@ -237,7 +263,9 @@ class TestParseArgs:
         assert args.run_date == "2026-01-01"
 
     def test_combined_args(self):
-        args = parse_args(["--task", "prices", "--no-schedule", "--run-date", "2026-06-01"])
+        args = parse_args(
+            ["--task", "prices", "--no-schedule", "--run-date", "2026-06-01"]
+        )
         assert args.task == "prices"
         assert args.no_schedule is True
         assert args.run_date == "2026-06-01"
@@ -258,7 +286,10 @@ class TestMainCLI:
                     mock_minio_cls, mock_fetcher_cls, mock_validator_cls,
                     mock_writer_cls):
         """Wire up standard mocks used by multiple CLI tests."""
-        from tests.test_main import _make_cfg, _make_universe, _make_prices, _make_financials, _make_rates, _passed
+        from tests.test_main import (
+            _make_cfg, _make_universe, _make_prices,
+            _make_financials, _make_rates, _passed,
+        )
 
         mock_load_cfg.return_value = _make_cfg()
 
