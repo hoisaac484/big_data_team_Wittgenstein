@@ -47,3 +47,27 @@ jobs:
           file: team_wittgenstein/coursework_one/coverage.xml
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
+
+  security:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          allow-prereleases: true
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Install dependencies
+        run: poetry install --no-root
+
+      - name: Scan code with Bandit
+        run: poetry run bandit -c pyproject.toml -r modules/ main.py
+
+      - name: Audit dependencies with pip-audit
+        run: poetry run pip-audit

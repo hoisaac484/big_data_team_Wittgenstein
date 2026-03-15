@@ -18,15 +18,18 @@ yfinance = "^0.2"
 requests = "^2.31"
 pyarrow = "^23.0.1"
 python-dotenv = "^1.2.2"
+apscheduler = "^3.10"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"
 pytest-cov = "^6.0"
 pytest-mock = "^3.0"
 flake8 = "^7.0"
-black = "^24.0"
+black = "^26.3"
 isort = "^5.0"
 sphinx = "^7.0"
+bandit = {extras = ["toml"], version = "^1.7"}
+pip-audit = "^2.7"
 
 [tool.black]
 line-length = 88
@@ -37,7 +40,11 @@ line_length = 88
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=modules --cov-report=term-missing"
+addopts = "--cov=modules --cov=main --cov-report=term-missing --cov-fail-under=80"
+
+[tool.bandit]
+targets = ["modules", "main.py"]
+exclude_dirs = ["tests"]
 
 [build-system]
 requires = ["poetry-core"]

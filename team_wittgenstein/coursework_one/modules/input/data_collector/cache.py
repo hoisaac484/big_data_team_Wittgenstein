@@ -101,7 +101,10 @@ class CacheMixin:
                         )
                         return False
                 except Exception:
-                    pass
+                    logger.debug(
+                        "Could not parse fetched_at for %s/%s; treating cache as valid",
+                        data_type, name,
+                    )
 
         return True
 

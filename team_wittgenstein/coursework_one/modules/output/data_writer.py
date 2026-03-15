@@ -139,7 +139,7 @@ class DataWriter:
         # 3-column unique key: symbol + fiscal_year + fiscal_quarter
         try:
             query = (
-                f"SELECT symbol, fiscal_year, fiscal_quarter "
+                f"SELECT symbol, fiscal_year, fiscal_quarter "  # nosec B608 -- SCHEMA is a module-level constant, not user input
                 f"FROM {SCHEMA}.financial_data"
             )
             existing = self.pg.read_query(query)
@@ -337,7 +337,7 @@ class DataWriter:
             pd.DataFrame with the two key columns, or empty DataFrame.
         """
         try:
-            query = f"SELECT {key_col1}, {key_col2} " f"FROM {SCHEMA}.{table}"
+            query = f"SELECT {key_col1}, {key_col2} " f"FROM {SCHEMA}.{table}"  # nosec B608 -- SCHEMA is a constant; table/cols are hardcoded internal values
             return self.pg.read_query(query)
         except Exception as e:
             logger.warning("Could not read existing keys from %s: %s", table, e)
@@ -419,7 +419,7 @@ class DataWriter:
         counts = {}
         for table in tables:
             try:
-                df = self.pg.read_query(f"SELECT COUNT(*) as cnt FROM {SCHEMA}.{table}")
+                df = self.pg.read_query(f"SELECT COUNT(*) as cnt FROM {SCHEMA}.{table}")  # nosec B608 -- SCHEMA is a constant; table is from a hardcoded list
                 counts[table] = int(df.iloc[0]["cnt"])
             except Exception:
                 counts[table] = 0
