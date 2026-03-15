@@ -143,9 +143,7 @@ class PostgresConnection:
         """Return distinct symbols currently present in managed tables."""
         symbols = set()
         for table_name in self.get_managed_symbol_tables(schema=schema):
-            query = (
-                f"SELECT DISTINCT symbol FROM {schema}.{table_name}"  # nosec B608
-            )
+            query = f"SELECT DISTINCT symbol FROM {schema}.{table_name}"  # nosec B608
             df = self.read_query(query)
             if df is None or df.empty or "symbol" not in df.columns:
                 continue

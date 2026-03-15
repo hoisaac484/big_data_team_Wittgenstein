@@ -24,8 +24,11 @@ from modules.processing.data_validator import ValidationResult
 def _make_cfg(**overrides):
     cfg = {
         "postgres": {
-            "host": "h", "port": 5432, "database": "d",
-            "user": "u", "password": "p",
+            "host": "h",
+            "port": 5432,
+            "database": "d",
+            "user": "u",
+            "password": "p",
         },
         "mongo": {"host": "h", "port": 27017},
         "minio": {"host": "h", "access_key": "a", "secret_key": "s", "secure": False},
@@ -37,8 +40,10 @@ def _make_cfg(**overrides):
         },
         "country_filter": "US",
         "validation": {
-            "min_price_rows": 5, "min_years": 1,
-            "max_null_pct": 0.5, "strict": True,
+            "min_price_rows": 5,
+            "min_years": 1,
+            "max_null_pct": 0.5,
+            "strict": True,
         },
         "dev": {"enabled": True, "max_symbols": 2},
         "scheduler": {
@@ -55,26 +60,34 @@ def _make_universe():
 
 
 def _make_prices():
-    return pd.DataFrame({
-        "symbol": ["AAPL"] * 5,
-        "trade_date": pd.bdate_range("2024-01-01", periods=5),
-        "close_price": [150.0] * 5,
-    })
+    return pd.DataFrame(
+        {
+            "symbol": ["AAPL"] * 5,
+            "trade_date": pd.bdate_range("2024-01-01", periods=5),
+            "close_price": [150.0] * 5,
+        }
+    )
 
 
 def _make_financials():
-    return pd.DataFrame({
-        "symbol": ["AAPL"],
-        "fiscal_year": [2024],
-        "fiscal_quarter": [1],
-        "total_assets": [3e11],
-    })
+    return pd.DataFrame(
+        {
+            "symbol": ["AAPL"],
+            "fiscal_year": [2024],
+            "fiscal_quarter": [1],
+            "total_assets": [3e11],
+        }
+    )
 
 
 def _make_rates():
-    return pd.DataFrame({
-        "country": ["US"], "rate_date": ["2024-01-01"], "rate": [0.04],
-    })
+    return pd.DataFrame(
+        {
+            "country": ["US"],
+            "rate_date": ["2024-01-01"],
+            "rate": [0.04],
+        }
+    )
 
 
 def _passed():
@@ -200,10 +213,12 @@ class TestLoadUniverse:
         assert "BRK.B" not in symbols
 
     def test_dev_mode_limits_symbols(self):
-        df = pd.DataFrame({
-            "symbol": ["AAPL", "MSFT", "GOOG"],
-            "country": ["US", "US", "US"],
-        })
+        df = pd.DataFrame(
+            {
+                "symbol": ["AAPL", "MSFT", "GOOG"],
+                "country": ["US", "US", "US"],
+            }
+        )
         cfg = _make_cfg(dev={"enabled": True, "max_symbols": 2})
         pg = self._make_pg(df)
         fetcher = MagicMock()
@@ -528,9 +543,7 @@ class TestMain:
         mock_pg.delete_symbols_missing_from_company_list.return_value = []
         mock_pg_cls.return_value = mock_pg
 
-        for mock_cls, test_val in [
-            (mock_mongo_cls, True), (mock_minio_cls, True)
-        ]:
+        for mock_cls, test_val in [(mock_mongo_cls, True), (mock_minio_cls, True)]:
             mock_cls.return_value.test_connection.return_value = test_val
 
         prices = _make_prices()

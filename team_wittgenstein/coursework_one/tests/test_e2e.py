@@ -38,17 +38,21 @@ def _prices_df(symbols=("AAPL", "MSFT"), years=2):
     )
     frames = []
     for sym in symbols:
-        frames.append(pd.DataFrame({
-            "symbol": sym,
-            "trade_date": dates,
-            "open_price": 150.0,
-            "high_price": 155.0,
-            "low_price": 148.0,
-            "close_price": 152.0,
-            "adjusted_close": 152.0,
-            "volume": 1_000_000,
-            "currency": "USD",
-        }))
+        frames.append(
+            pd.DataFrame(
+                {
+                    "symbol": sym,
+                    "trade_date": dates,
+                    "open_price": 150.0,
+                    "high_price": 155.0,
+                    "low_price": 148.0,
+                    "close_price": 152.0,
+                    "adjusted_close": 152.0,
+                    "volume": 1_000_000,
+                    "currency": "USD",
+                }
+            )
+        )
     return pd.concat(frames, ignore_index=True)
 
 
@@ -56,29 +60,33 @@ def _financials_df(symbols=("AAPL", "MSFT")):
     rows = []
     for sym in symbols:
         for yr, qtr in [(2023, 1), (2023, 2), (2024, 1), (2024, 2)]:
-            rows.append({
-                "symbol": sym,
-                "fiscal_year": yr,
-                "fiscal_quarter": qtr,
-                "report_date": pd.Timestamp(f"{yr}-0{qtr * 3}-01"),
-                "total_assets": 3e11,
-                "book_equity": 5e10,
-                "net_income": 2e10,
-                "total_debt": 1e11,
-                "shares_outstanding": 15e9,
-                "eps": 1.5,
-                "currency": "USD",
-                "source": "edgar",
-            })
+            rows.append(
+                {
+                    "symbol": sym,
+                    "fiscal_year": yr,
+                    "fiscal_quarter": qtr,
+                    "report_date": pd.Timestamp(f"{yr}-0{qtr * 3}-01"),
+                    "total_assets": 3e11,
+                    "book_equity": 5e10,
+                    "net_income": 2e10,
+                    "total_debt": 1e11,
+                    "shares_outstanding": 15e9,
+                    "eps": 1.5,
+                    "currency": "USD",
+                    "source": "edgar",
+                }
+            )
     return pd.DataFrame(rows)
 
 
 def _rates_df():
-    return pd.DataFrame({
-        "country": ["US"] * 12,
-        "rate_date": pd.date_range("2024-01-01", periods=12, freq="MS"),
-        "rate": [5.25] * 12,
-    })
+    return pd.DataFrame(
+        {
+            "country": ["US"] * 12,
+            "rate_date": pd.date_range("2024-01-01", periods=12, freq="MS"),
+            "rate": [5.25] * 12,
+        }
+    )
 
 
 def _make_ctx(prices=None, financials=None, rates=None, strict=True):
@@ -110,9 +118,9 @@ def _make_ctx(prices=None, financials=None, rates=None, strict=True):
     }
 
     pg = MagicMock()
-    pg.get_company_list.return_value = pd.DataFrame({
-        "symbol": ["AAPL", "MSFT"], "country": ["US", "US"]
-    })
+    pg.get_company_list.return_value = pd.DataFrame(
+        {"symbol": ["AAPL", "MSFT"], "country": ["US", "US"]}
+    )
     pg.delete_symbols_missing_from_company_list.return_value = []
     # Return empty DataFrames so writer treats all rows as new
     pg.read_query.return_value = pd.DataFrame()
@@ -213,17 +221,19 @@ class TestPipelineE2E:
         )
         short_prices = pd.concat(
             [
-                pd.DataFrame({
-                    "symbol": s,
-                    "trade_date": dates,
-                    "open_price": 150.0,
-                    "high_price": 155.0,
-                    "low_price": 148.0,
-                    "close_price": 152.0,
-                    "adjusted_close": 152.0,
-                    "volume": 1_000_000,
-                    "currency": "USD",
-                })
+                pd.DataFrame(
+                    {
+                        "symbol": s,
+                        "trade_date": dates,
+                        "open_price": 150.0,
+                        "high_price": 155.0,
+                        "low_price": 148.0,
+                        "close_price": 152.0,
+                        "adjusted_close": 152.0,
+                        "volume": 1_000_000,
+                        "currency": "USD",
+                    }
+                )
                 for s in ("AAPL", "MSFT")
             ],
             ignore_index=True,
@@ -282,9 +292,16 @@ class TestParseArgs:
 
 class TestMainCLI:
 
-    def _base_setup(self, mock_load_cfg, mock_pg_cls, mock_mongo_cls,
-                    mock_minio_cls, mock_fetcher_cls, mock_validator_cls,
-                    mock_writer_cls):
+    def _base_setup(
+        self,
+        mock_load_cfg,
+        mock_pg_cls,
+        mock_mongo_cls,
+        mock_minio_cls,
+        mock_fetcher_cls,
+        mock_validator_cls,
+        mock_writer_cls,
+    ):
         """Wire up standard mocks used by multiple CLI tests."""
         from tests.test_main import (
             _make_cfg,
@@ -337,12 +354,24 @@ class TestMainCLI:
     @patch("main.PostgresConnection")
     @patch("main.load_config")
     def test_task_prices_skips_fundamentals_on_startup(
-        self, mock_load_cfg, mock_pg_cls, mock_mongo_cls, mock_minio_cls,
-        mock_fetcher_cls, mock_validator_cls, mock_writer_cls, mock_scheduler_cls,
+        self,
+        mock_load_cfg,
+        mock_pg_cls,
+        mock_mongo_cls,
+        mock_minio_cls,
+        mock_fetcher_cls,
+        mock_validator_cls,
+        mock_writer_cls,
+        mock_scheduler_cls,
     ):
         mock_fetcher, _, _ = self._base_setup(
-            mock_load_cfg, mock_pg_cls, mock_mongo_cls,
-            mock_minio_cls, mock_fetcher_cls, mock_validator_cls, mock_writer_cls,
+            mock_load_cfg,
+            mock_pg_cls,
+            mock_mongo_cls,
+            mock_minio_cls,
+            mock_fetcher_cls,
+            mock_validator_cls,
+            mock_writer_cls,
         )
         mock_scheduler_cls.return_value = MagicMock()
 
@@ -360,12 +389,24 @@ class TestMainCLI:
     @patch("main.PostgresConnection")
     @patch("main.load_config")
     def test_task_fundamentals_skips_prices_on_startup(
-        self, mock_load_cfg, mock_pg_cls, mock_mongo_cls, mock_minio_cls,
-        mock_fetcher_cls, mock_validator_cls, mock_writer_cls, mock_scheduler_cls,
+        self,
+        mock_load_cfg,
+        mock_pg_cls,
+        mock_mongo_cls,
+        mock_minio_cls,
+        mock_fetcher_cls,
+        mock_validator_cls,
+        mock_writer_cls,
+        mock_scheduler_cls,
     ):
         mock_fetcher, _, _ = self._base_setup(
-            mock_load_cfg, mock_pg_cls, mock_mongo_cls,
-            mock_minio_cls, mock_fetcher_cls, mock_validator_cls, mock_writer_cls,
+            mock_load_cfg,
+            mock_pg_cls,
+            mock_mongo_cls,
+            mock_minio_cls,
+            mock_fetcher_cls,
+            mock_validator_cls,
+            mock_writer_cls,
         )
         mock_scheduler_cls.return_value = MagicMock()
 
@@ -383,12 +424,24 @@ class TestMainCLI:
     @patch("main.PostgresConnection")
     @patch("main.load_config")
     def test_no_schedule_does_not_start_scheduler(
-        self, mock_load_cfg, mock_pg_cls, mock_mongo_cls, mock_minio_cls,
-        mock_fetcher_cls, mock_validator_cls, mock_writer_cls, mock_scheduler_cls,
+        self,
+        mock_load_cfg,
+        mock_pg_cls,
+        mock_mongo_cls,
+        mock_minio_cls,
+        mock_fetcher_cls,
+        mock_validator_cls,
+        mock_writer_cls,
+        mock_scheduler_cls,
     ):
         self._base_setup(
-            mock_load_cfg, mock_pg_cls, mock_mongo_cls,
-            mock_minio_cls, mock_fetcher_cls, mock_validator_cls, mock_writer_cls,
+            mock_load_cfg,
+            mock_pg_cls,
+            mock_mongo_cls,
+            mock_minio_cls,
+            mock_fetcher_cls,
+            mock_validator_cls,
+            mock_writer_cls,
         )
         mock_scheduler = MagicMock()
         mock_scheduler_cls.return_value = mock_scheduler
@@ -406,12 +459,24 @@ class TestMainCLI:
     @patch("main.PostgresConnection")
     @patch("main.load_config")
     def test_default_task_runs_full_pipeline_and_starts_scheduler(
-        self, mock_load_cfg, mock_pg_cls, mock_mongo_cls, mock_minio_cls,
-        mock_fetcher_cls, mock_validator_cls, mock_writer_cls, mock_scheduler_cls,
+        self,
+        mock_load_cfg,
+        mock_pg_cls,
+        mock_mongo_cls,
+        mock_minio_cls,
+        mock_fetcher_cls,
+        mock_validator_cls,
+        mock_writer_cls,
+        mock_scheduler_cls,
     ):
         mock_fetcher, _, _ = self._base_setup(
-            mock_load_cfg, mock_pg_cls, mock_mongo_cls,
-            mock_minio_cls, mock_fetcher_cls, mock_validator_cls, mock_writer_cls,
+            mock_load_cfg,
+            mock_pg_cls,
+            mock_mongo_cls,
+            mock_minio_cls,
+            mock_fetcher_cls,
+            mock_validator_cls,
+            mock_writer_cls,
         )
         mock_scheduler = MagicMock()
         mock_scheduler_cls.return_value = mock_scheduler

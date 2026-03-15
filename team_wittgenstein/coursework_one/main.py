@@ -131,9 +131,9 @@ def _load_universe(pg, fetcher, cfg) -> tuple:
 
     symbol_col = "symbol" if "symbol" in universe.columns else "ticker"
     country_col = (
-        "country" if "country" in universe.columns
-        else "country_code" if "country_code" in universe.columns
-        else None
+        "country"
+        if "country" in universe.columns
+        else "country_code" if "country_code" in universe.columns else None
     )
 
     country_filter = cfg.get("country_filter")
@@ -145,20 +145,16 @@ def _load_universe(pg, fetcher, cfg) -> tuple:
         ]
         logger.info(
             "Country filter '%s': %d → %d companies",
-            country_filter, before, len(universe),
+            country_filter,
+            before,
+            len(universe),
         )
 
-    symbols = (
-        universe[symbol_col]
-        .dropna()
-        .astype(str)
-        .str.strip()
-        .unique()
-        .tolist()
-    )
+    symbols = universe[symbol_col].dropna().astype(str).str.strip().unique().tolist()
     countries = (
         universe[country_col].dropna().astype(str).str.strip().unique().tolist()
-        if country_col else []
+        if country_col
+        else []
     )
 
     exclude = set(cfg.get("exclude_symbols") or [])
@@ -167,7 +163,9 @@ def _load_universe(pg, fetcher, cfg) -> tuple:
         symbols = [s for s in symbols if s not in exclude]
         logger.info(
             "Excluded %d known-bad symbols: %d → %d",
-            before - len(symbols), before, len(symbols),
+            before - len(symbols),
+            before,
+            len(symbols),
         )
 
     normalised = []
@@ -295,7 +293,8 @@ def run_prices_and_rates(ctx: PipelineContext):
         rates_written = ctx.writer.write_risk_free_rates(rates_df)
         logger.info(
             "Task complete: %d price rows, %d rate rows written",
-            prices_written, rates_written,
+            prices_written,
+            rates_written,
         )
     except Exception:
         logger.exception("prices+rates task failed — scheduler will continue")
