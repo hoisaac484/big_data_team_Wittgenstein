@@ -9,7 +9,6 @@ import requests as req_lib
 from modules.input.data_collector import DataFetcher
 from modules.input.data_collector.constants import SimFinServerError
 
-
 # ===================================================================
 # _normalize_quarter_value
 # ===================================================================

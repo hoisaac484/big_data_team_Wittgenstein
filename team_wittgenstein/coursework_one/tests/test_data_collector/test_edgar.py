@@ -7,7 +7,6 @@ import requests as req_lib
 
 from modules.input.data_collector import DataFetcher
 
-
 # ===================================================================
 # _edgar_get_json
 # ===================================================================

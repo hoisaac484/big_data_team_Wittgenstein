@@ -6,7 +6,6 @@ import pandas as pd
 import pytest
 import requests as req_lib
 
-
 # ===================================================================
 # fetch_risk_free_rates
 # ===================================================================

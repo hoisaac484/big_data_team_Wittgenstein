@@ -8,7 +8,6 @@ import pytest
 from modules.input.data_collector import DataFetcher
 from modules.input.data_collector.constants import SimFinServerError
 
-
 # ===================================================================
 # fetch_fundamentals
 # ===================================================================

@@ -6,7 +6,6 @@ import pandas as pd
 
 from modules.input.data_collector import DataFetcher
 
-
 # ===================================================================
 # _reshape_price_df
 # ===================================================================

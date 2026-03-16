@@ -4,7 +4,6 @@ import pandas as pd
 
 from modules.input.data_collector import DataFetcher
 
-
 # ===================================================================
 # _ensure_fundamentals_schema
 # ===================================================================
