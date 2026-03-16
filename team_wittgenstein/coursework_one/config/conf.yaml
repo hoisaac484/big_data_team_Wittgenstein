@@ -54,8 +54,20 @@ validation:
   max_null_pct: 0.5
   strict: true
 
+# Scheduler: cron times for each recurring task (all times UTC)
+scheduler:
+  prices_and_rates:      # runs monthly
+    day: 1
+    hour: 2
+    minute: 0
+  fundamentals:          # runs quarterly
+    month: "1,4,7,10"
+    day: 1
+    hour: 4
+    minute: 0
+
 # Dev mode: limit symbols to avoid hitting API rate limits during development.
 # Set enabled: false for a full production run.
 dev:
   enabled: true
-  max_symbols: 100
+  max_symbols: 3

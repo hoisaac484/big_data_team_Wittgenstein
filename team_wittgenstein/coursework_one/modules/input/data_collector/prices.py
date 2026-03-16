@@ -149,7 +149,12 @@ class PriceMixin:
         # single-symbol downloads)
         if isinstance(raw_df.columns, pd.MultiIndex):
             raw_df = raw_df.copy()
-            raw_df.columns = raw_df.columns.get_level_values(0)
+            price_keys = {"Open", "High", "Low", "Close", "Adj Close", "Volume"}
+            level0 = set(raw_df.columns.get_level_values(0))
+            if price_keys & level0:
+                raw_df.columns = raw_df.columns.get_level_values(0)
+            else:
+                raw_df.columns = raw_df.columns.get_level_values(1)
 
         df = raw_df.reset_index()
 
