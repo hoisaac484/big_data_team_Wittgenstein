@@ -420,9 +420,7 @@ class TestFetchSimfinFundamentals:
 
     @patch("modules.input.data_collector.simfin.sleep")
     @patch("modules.input.data_collector.simfin.requests.get")
-    def test_429_retry_after_non_numeric(
-        self, mock_get, mock_sleep, fetcher
-    ):
+    def test_429_retry_after_non_numeric(self, mock_get, mock_sleep, fetcher):
         """429 with non-numeric Retry-After falls back to 2s (line 185-186)."""
         fetcher.simfin_api_key = "test-key"
         rate_resp = MagicMock()
@@ -432,16 +430,12 @@ class TestFetchSimfinFundamentals:
         ok_resp.status_code = 200
         ok_resp.json.return_value = {"ok": True}
         mock_get.side_effect = [rate_resp, ok_resp]
-        result = fetcher._simfin_get(
-            "http://example.com", params={}, max_retries=3
-        )
+        result = fetcher._simfin_get("http://example.com", params={}, max_retries=3)
         assert result == {"ok": True}
         mock_sleep.assert_any_call(2.0)
 
     def test_empty_shares_payload_list(self, fetcher):
         """Empty shares payload returns empty frame (line 254)."""
-        result = fetcher._simfin_weighted_shares_frame(
-            [], default_symbol="AAPL"
-        )
+        result = fetcher._simfin_weighted_shares_frame([], default_symbol="AAPL")
         assert result.empty
         assert "shares_outstanding" in result.columns

@@ -215,9 +215,7 @@ class TestPostgresConnection:
         """No removed symbols returns empty list (line 193-194)."""
         mock_create_engine.return_value = MagicMock()
         pg = PostgresConnection("localhost", 5432, "fift", "user", "pass")
-        with patch.object(
-            pg, "get_tracked_symbols", return_value=["AAPL"]
-        ):
+        with patch.object(pg, "get_tracked_symbols", return_value=["AAPL"]):
             result = pg.delete_symbols_missing_from_company_list(["AAPL"])
         assert result == []
 
@@ -253,16 +251,10 @@ class TestPostgresConnection:
         mock_engine = MagicMock()
         mock_create_engine.return_value = mock_engine
         mock_conn = MagicMock()
-        mock_engine.begin.return_value.__enter__ = MagicMock(
-            return_value=mock_conn
-        )
-        mock_engine.begin.return_value.__exit__ = MagicMock(
-            return_value=False
-        )
+        mock_engine.begin.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_engine.begin.return_value.__exit__ = MagicMock(return_value=False)
         pg = PostgresConnection("localhost", 5432, "fift", "user", "pass")
-        with patch.object(
-            pg, "get_managed_symbol_tables", return_value=["price_data"]
-        ):
+        with patch.object(pg, "get_managed_symbol_tables", return_value=["price_data"]):
             result = pg.delete_symbol_data(["AAPL", "MSFT"])
         assert result == 2
         mock_conn.execute.assert_called_once()
@@ -538,9 +530,7 @@ class TestMinioConnection:
 
         mock_client = MagicMock()
         mock_minio_cls.return_value = mock_client
-        err = S3Error(
-            MagicMock(), "NoSuchKey", "not found", "resource", "req", "host"
-        )
+        err = S3Error(MagicMock(), "NoSuchKey", "not found", "resource", "req", "host")
         mock_client.remove_object.side_effect = err
         minio = MinioConnection("localhost:9000", "key", "secret")
         assert minio.delete_object("bucket", "missing.json") is False

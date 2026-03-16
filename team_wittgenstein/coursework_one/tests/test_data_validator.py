@@ -318,9 +318,7 @@ class TestValidateFinancialsEdgeCases:
                 "total_assets": [3e11],
             }
         )
-        result = validator.validate_financials(
-            df, expected_symbols=["AAPL", "MSFT"]
-        )
+        result = validator.validate_financials(df, expected_symbols=["AAPL", "MSFT"])
         assert any("missing" in w.lower() for w in result.warnings)
 
 
@@ -346,9 +344,7 @@ class TestValidateRatesEdgeCases:
                 "rate": [0.04],
             }
         )
-        result = validator.validate_risk_free_rates(
-            df, expected_countries=["US", "GB"]
-        )
+        result = validator.validate_risk_free_rates(df, expected_countries=["US", "GB"])
         assert any("missing" in w.lower() for w in result.warnings)
 
 

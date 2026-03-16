@@ -543,9 +543,7 @@ class TestEdgarFiscalPeriodsEdgeCases:
                 }
             }
         }
-        with patch.object(
-            fetcher, "_edgar_get_json", return_value=payload
-        ):
+        with patch.object(fetcher, "_edgar_get_json", return_value=payload):
             result = fetcher._edgar_get_fiscal_periods("0000320193")
         assert not result.empty
 
@@ -560,9 +558,7 @@ class TestEdgarFiscalPeriodsEdgeCases:
                 }
             }
         }
-        with patch.object(
-            fetcher, "_edgar_get_json", return_value=payload
-        ):
+        with patch.object(fetcher, "_edgar_get_json", return_value=payload):
             result = fetcher._edgar_get_fiscal_periods("0000320193")
         assert isinstance(result, pd.DataFrame)
 
@@ -577,9 +573,7 @@ class TestEdgarFiscalPeriodsEdgeCases:
                 }
             }
         }
-        with patch.object(
-            fetcher, "_edgar_get_json", return_value=payload
-        ):
+        with patch.object(fetcher, "_edgar_get_json", return_value=payload):
             result = fetcher._edgar_get_fiscal_periods("0000320193")
         assert not result.empty
 
@@ -595,12 +589,8 @@ class TestEdgarFiscalPeriodsEdgeCases:
             }
         }
         cutoff = pd.Timestamp("2020-01-01")
-        with patch.object(
-            fetcher, "_edgar_get_json", return_value=payload
-        ):
-            result = fetcher._edgar_get_fiscal_periods(
-                "0000320193", cutoff=cutoff
-            )
+        with patch.object(fetcher, "_edgar_get_json", return_value=payload):
+            result = fetcher._edgar_get_fiscal_periods("0000320193", cutoff=cutoff)
         assert result.empty
 
 
@@ -707,19 +697,13 @@ class TestFetchEdgarFundamentalsEdgeCases:
             "EarningsPerShareBasic": {
                 "units": {
                     "USD/shares": [
-                        self._make_fact(
-                            "2024-03-31", "2024-01-01", 1.5, "2024-04-15"
-                        )
+                        self._make_fact("2024-03-31", "2024-01-01", 1.5, "2024-04-15")
                     ]
                 }
             },
             "Assets": {
                 "units": {
-                    "USD": [
-                        self._make_fact(
-                            "2024-03-31", None, 3e11, "2024-04-15"
-                        )
-                    ]
+                    "USD": [self._make_fact("2024-03-31", None, 3e11, "2024-04-15")]
                 }
             },
         }
@@ -749,29 +733,17 @@ class TestFetchEdgarFundamentalsEdgeCases:
         facts = {
             "Assets": {
                 "units": {
-                    "USD": [
-                        self._make_fact(
-                            "2024-03-31", None, 3e11, "2024-04-15"
-                        )
-                    ]
+                    "USD": [self._make_fact("2024-03-31", None, 3e11, "2024-04-15")]
                 }
             },
             "LongTermDebtNoncurrent": {
                 "units": {
-                    "USD": [
-                        self._make_fact(
-                            "2024-03-31", None, 5e10, "2024-04-15"
-                        )
-                    ]
+                    "USD": [self._make_fact("2024-03-31", None, 5e10, "2024-04-15")]
                 }
             },
             "LongTermDebtCurrent": {
                 "units": {
-                    "USD": [
-                        self._make_fact(
-                            "2024-03-31", None, 1e10, "2024-04-15"
-                        )
-                    ]
+                    "USD": [self._make_fact("2024-03-31", None, 1e10, "2024-04-15")]
                 }
             },
         }

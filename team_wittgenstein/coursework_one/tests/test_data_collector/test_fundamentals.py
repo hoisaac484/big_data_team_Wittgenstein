@@ -583,9 +583,7 @@ class TestMergeWaterfallFieldMissing:
                 "eps": [1.5],
             }
         )
-        result = fetcher._merge_waterfall(
-            [("edgar", primary), ("simfin", secondary)]
-        )
+        result = fetcher._merge_waterfall([("edgar", primary), ("simfin", secondary)])
         assert "eps" in result.columns
         assert result.iloc[0]["eps"] == 1.5
 
