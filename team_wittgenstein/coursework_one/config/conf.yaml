@@ -61,8 +61,8 @@ scheduler:
     hour: 2
     minute: 0
   fundamentals:          # runs quarterly
-    month: "1,4,7,10"
-    day: 1
+    month: "2,5,8,11"
+    day: 15
     hour: 4
     minute: 0
 
