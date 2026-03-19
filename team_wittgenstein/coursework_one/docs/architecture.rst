@@ -32,7 +32,7 @@ prevention and logs raw responses to MongoDB.
 DataFetcher — mixin composition
 -------------------------------
 
-``DataFetcher`` is assembled from seven specialised mixins, each
+``DataFetcher`` is assembled from eight specialised mixins, each
 handling a single responsibility:
 
 .. list-table::
@@ -79,6 +79,26 @@ in the higher-priority source are filled from the next source down.
 After merging, remaining nulls are forward-filled (limit 2 quarters)
 from the most recent non-null value for the same symbol.
 
+Concurrency and rate limiting
+-----------------------------
+
+**Fundamentals fetching** uses a ``ThreadPoolExecutor`` with 4 workers
+to fetch multiple symbols concurrently. Each worker runs the full
+waterfall (EDGAR → SimFin → yfinance) for one symbol at a time.
+
+**Price retry logic**: after the yfinance batch download, any symbols
+that were silently dropped are retried individually with separate
+``yf.download()`` calls. This prevents mismatches between price and
+financial data coverage.
+
+**Rate limiting** is enforced per API:
+
+- **Proactive throttling**: a minimum interval (0.55s for SimFin,
+  0.5s for EDGAR) between consecutive requests, enforced via
+  ``threading.Lock``.
+- **Reactive retry**: on HTTP 429 (rate limited), the code sleeps
+  for the ``Retry-After`` header value (or 2 seconds) then retries.
+
 CTL caching pattern
 -------------------
 
@@ -88,13 +108,13 @@ companion JSON control (CTL) file::
     wittgenstein-cache/
     ├── prices/
     │   ├── AAPL.parquet        (cached price data)
-    │   └── AAPL.ctl.json       (metadata: source, timestamp, row count)
+    │   └── AAPL.ctl            (metadata: source, timestamp, row count)
     ├── fundamentals/
     │   ├── AAPL.parquet
-    │   └── AAPL.ctl.json
+    │   └── AAPL.ctl
     └── risk_free_rates/
         ├── all.parquet
-        └── all.ctl.json
+        └── all.ctl
 
 The CTL file records when data was fetched and from which source.
 On subsequent runs, ``_is_cached()`` checks the CTL timestamp against

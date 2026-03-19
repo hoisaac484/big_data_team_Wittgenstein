@@ -87,7 +87,7 @@ class FundamentalsMixin:
         symbols,
         period,
         source,
-        max_workers=4,
+        max_workers=5,
     ):
         """Fetch fundamentals concurrently (rate-limit safe).
 
@@ -192,7 +192,6 @@ class FundamentalsMixin:
         if df is None or df.empty:
             return None
 
-        df = self._ensure_fundamentals_schema(df)
         df = self._apply_fundamentals_period(df, period)
         return df.reset_index(drop=True)
 

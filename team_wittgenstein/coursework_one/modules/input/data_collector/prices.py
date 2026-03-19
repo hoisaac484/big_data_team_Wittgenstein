@@ -106,6 +106,45 @@ class PriceMixin:
                 except Exception as e:
                     logger.error("Error processing prices for %s: %s", symbol, e)
 
+        # Retry symbols that the batch download silently dropped
+        fetched_symbols = set()
+        for df in result_dfs:
+            if "symbol" in df.columns:
+                fetched_symbols.update(df["symbol"].unique())
+
+        missed = [s for s in symbols if s not in fetched_symbols]
+        if missed:
+            logger.info(
+                "Batch download missed %d symbols, retrying individually: %s",
+                len(missed),
+                missed[:20],
+            )
+            for symbol in missed:
+                try:
+                    single_raw = yf.download(
+                        symbol,
+                        period=period,
+                        threads=False,
+                        progress=False,
+                        auto_adjust=False,
+                    )
+                    if single_raw is not None and not single_raw.empty:
+                        currency = self._get_price_currency(symbol)
+                        df = self._reshape_price_df(
+                            single_raw, symbol, currency=currency
+                        )
+                        if df is not None and not df.empty:
+                            df = self._dedupe_dataframe("prices", df, name=symbol)
+                            self._cache_dataframe("prices", symbol, df, "yfinance")
+                            result_dfs.append(df)
+                            logger.info("Retry succeeded for %s", symbol)
+                        else:
+                            logger.warning("Retry returned empty data for %s", symbol)
+                    else:
+                        logger.warning("Retry returned no data for %s", symbol)
+                except Exception as e:
+                    logger.error("Retry failed for %s: %s", symbol, e)
+
         logger.info("Cached prices for %d symbols", len(result_dfs))
         return result_dfs
 

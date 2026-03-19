@@ -80,8 +80,8 @@ All settings live in ``config/conf.yaml``:
       strict: true
 
     dev:
-      enabled: true
-      max_symbols: 100
+      enabled: false
+      max_symbols: 3
 
 Key settings:
 

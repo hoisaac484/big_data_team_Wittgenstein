@@ -180,7 +180,7 @@ class CacheMixin:
 
     def _fundamentals_cache_name(self, symbol):
         """Build fundamentals cache key name (symbol only)."""
-        return f"{symbol}"
+        return symbol
 
     def mark_loaded(self, data_type, name):
         """Update a CTL file to mark data as loaded into PostgreSQL.

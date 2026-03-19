@@ -15,8 +15,8 @@ from modules.db.db_connection import (
     PostgresConnection,
 )
 from modules.input.data_collector import DataFetcher
-from modules.processing.data_validator import DataValidator
 from modules.output.data_writer import DataWriter
+from modules.processing.data_validator import DataValidator
 
 logger = logging.getLogger(__name__)
 
@@ -426,8 +426,15 @@ def main(argv=None):
     signal.signal(signal.SIGINT, _shutdown)
 
     logger.info(
-        "Scheduler started. Jobs: monthly prices+rates (1st @ 02:00 UTC), "
-        "quarterly fundamentals (1st Jan/Apr/Jul/Oct @ 04:00 UTC)"
+        "Scheduler started. Jobs: monthly prices+rates (day %s @ %02d:%02d UTC), "
+        "quarterly fundamentals (months %s, day %s @ %02d:%02d UTC)",
+        pr_cfg.get("day", 1),
+        pr_cfg.get("hour", 2),
+        pr_cfg.get("minute", 0),
+        fund_cfg.get("month", "1,4,7,10"),
+        fund_cfg.get("day", 1),
+        fund_cfg.get("hour", 4),
+        fund_cfg.get("minute", 0),
     )
     try:
         scheduler.start()

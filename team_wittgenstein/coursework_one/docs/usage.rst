@@ -42,11 +42,25 @@ The pipeline is designed to be re-run safely:
 - **Stale symbol cleanup** removes data for symbols that are no
   longer in ``company_static``.
 
+Command-line flags
+------------------
+
+``--no-schedule``
+    Run the pipeline once and exit immediately. Without this flag the
+    pipeline starts a recurring scheduler (prices monthly, fundamentals
+    quarterly) that keeps running in the background.
+
+``--prices-only``
+    Run only the prices and risk-free rates stage.
+
+``--fundamentals-only``
+    Run only the fundamentals stage.
+
 Dev mode
 --------
 
 Set ``dev.enabled: true`` in ``config/conf.yaml`` to limit the
-pipeline to the first N symbols (default 100). This avoids API rate
+pipeline to the first N symbols (default 3). This avoids API rate
 limits during development and testing.
 
 Running tests

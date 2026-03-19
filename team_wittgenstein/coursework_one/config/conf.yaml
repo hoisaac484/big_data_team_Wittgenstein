@@ -26,27 +26,152 @@ country_filter: "US"
 
 # Symbols to exclude from the pipeline (delisted, renamed, or broken tickers)
 exclude_symbols:
-  # Acquired / merged — no longer trading
-  - ATVI   # Activision → acquired by Microsoft
-  - ABMD   # Abiomed → acquired by J&J
-  - AGN    # Allergan → acquired by AbbVie
-  - ALXN   # Alexion → acquired by AstraZeneca
-  - CELG   # Celgene → acquired by Bristol-Myers Squibb
-  # Renamed — old ticker no longer resolves
-  - ANTM   # → ELV (Elevance Health)
-  - ADS    # → BFH (Bread Financial)
-  - ABC    # → COR (Cencora)
-  - COG    # → CTRA (Coterra Energy)
-  - ARNC   # → HWM (Howmet Aerospace)
-  - CBS    # → PARA (Paramount)
-  - BHGE   # → BKR (Baker Hughes)
-  - APC    # → OXY (Occidental Petroleum)
-  # Renamed ticker (symbol change)
-  - BLL    # → BALL (Ball Corp, renamed May 2022)
-  - XEC    # Cimarex → merged into CTRA (Coterra Energy)
-  - CTL    # CenturyLink → renamed LUMN (Lumen Technologies)
-  - CERN   # Cerner → acquired by Oracle
-  - ANSS   # ANSYS — delisted/unresolvable on yfinance
+  # Acquired / merged / seized / split — no longer trading (47 symbols, alphabetical)
+  # 1.  ABMD   - Abiomed → acquired by J&J
+  # 2.  AGN    - Allergan → acquired by AbbVie
+  # 3.  ALXN   - Alexion → acquired by AstraZeneca
+  # 4.  ANSS   - ANSYS — delisted/unresolvable on yfinance
+  # 5.  ATVI   - Activision → acquired by Microsoft
+  # 6.  CELG   - Celgene → acquired by Bristol-Myers Squibb
+  # 7.  CERN   - Cerner → acquired by Oracle
+  # 8.  CTXS   - Citrix → acquired by Vista Equity, Sep 2022
+  # 9.  CXO    - Concho Resources → acquired by ConocoPhillips, Jan 2021
+  # 10. DFS    - Discover → acquired by Capital One, May 2025
+  # 11. DISCA  - Discovery Class A → merged into WBD (Apr 2022)
+  # 12. DISCK  - Discovery Class C → merged into WBD (Apr 2022)
+  # 13. DRE    - Duke Realty → acquired by Prologis, Oct 2022
+  # 14. DWDP   - DowDuPont → split into DOW, DD, CTVA (Jun 2019)
+  # 15. ETFC   - E*Trade → acquired by Morgan Stanley, Oct 2020
+  # 16. FL     - Foot Locker → acquired by DICK'S Sporting Goods, Sep 2025
+  # 17. FLIR   - FLIR Systems → acquired by Teledyne, May 2021
+  # 18. FRC    - First Republic Bank → seized by FDIC, sold to JPMorgan (May 2023)
+  # 19. HBI    - Hanesbrands → acquired by Gildan Activewear, Dec 2025
+  # 20. HES    - Hess → acquired by Chevron, Jul 2025
+  # 21. HRS    - Harris Corp → merged into LHX (L3Harris, Jun 2019)
+  # 22. IPG    - Interpublic → acquired by Omnicom, Nov 2025
+  # 23. JNPR   - Juniper Networks → acquired by HPE, Jul 2025
+  # 24. JWN    - Nordstrom → went private, May 2025
+  # 25. K      - Kellogg → Kellanova → acquired by Mars, Dec 2025
+  # 26. KSU    - Kansas City Southern → acquired by Canadian Pacific, Apr 2023
+  # 27. LLL    - L3 Technologies → merged into LHX (L3Harris, Jun 2019)
+  # 28. MRO    - Marathon Oil → acquired by ConocoPhillips, Nov 2024
+  # 29. MXIM   - Maxim Integrated → acquired by Analog Devices, Aug 2021
+  # 30. MYL    - Mylan → merged into Viatris (VTRS), Nov 2020
+  # 31. NBL    - Noble Energy → acquired by Chevron, Oct 2020
+  # 32. NLSN   - Nielsen → taken private by Evergreen/Brookfield, Oct 2022
+  # 33. PBCT   - People's United → acquired by M&T Bank, Apr 2022
+  # 34. PXD    - Pioneer Natural Resources → acquired by ExxonMobil, May 2024
+  # 35. RHT    - Red Hat → acquired by IBM, Jul 2019
+  # 36. RTN    - Raytheon → merged into RTX, Apr 2020
+  # 37. SIVB   - SVB Financial → collapsed/FDIC seized, Mar 2023
+  # 38. TIF    - Tiffany → acquired by LVMH, Jan 2021
+  # 39. TSS    - Total System Services → merged into GPN, Sep 2019
+  # 40. TWTR   - Twitter → acquired by Elon Musk, Oct 2022
+  # 41. UTX    - United Technologies → merged into RTX (Raytheon, Apr 2020)
+  # 42. VAR    - Varian Medical → acquired by Siemens Healthineers, Apr 2021
+  # 43. VIAB   - Viacom → merged into VIAC → PARA (Dec 2019)
+  # 44. WBA    - Walgreens → taken private by Sycamore Partners, Aug 2025
+  # 45. WCG    - WellCare → acquired by Centene (CNC), Jan 2020
+  # 46. XEC    - Cimarex → merged into CTRA (Coterra Energy)
+  # 47. XLNX   - Xilinx → acquired by AMD, Feb 2022
+  - ABMD
+  - AGN
+  - ALXN
+  - ANSS
+  - ATVI
+  - CELG
+  - CERN
+  - CTXS
+  - CXO
+  - DFS
+  - DISCA
+  - DISCK
+  - DRE
+  - DWDP
+  - ETFC
+  - FL
+  - FLIR
+  - FRC
+  - HBI
+  - HES
+  - HRS
+  - IPG
+  - JNPR
+  - JWN
+  - K
+  - KSU
+  - LLL
+  - MRO
+  - MXIM
+  - MYL
+  - NBL
+  - NLSN
+  - PBCT
+  - PXD
+  - RHT
+  - RTN
+  - SIVB
+  - TIF
+  - TSS
+  - TWTR
+  - UTX
+  - VAR
+  - VIAB
+  - WBA
+  - WCG
+  - XEC
+  - XLNX
+  # Renamed tickers — old symbol no longer resolves (25 symbols, alphabetical)
+  # 1.  ABC    - → COR (Cencora)
+  # 2.  ADS    - → BFH (Bread Financial)
+  # 3.  ANTM   - → ELV (Elevance Health)
+  # 4.  APC    - → OXY (Occidental Petroleum)
+  # 5.  ARNC   - → HWM (Howmet Aerospace)
+  # 6.  BHGE   - → BKR (Baker Hughes)
+  # 7.  BLL    - → BALL (Ball Corp, renamed May 2022)
+  # 8.  CBS    - → PARA (Paramount)
+  # 9.  COG    - → CTRA (Coterra Energy)
+  # 10. CTL    - → LUMN (CenturyLink → Lumen Technologies)
+  # 11. DISH   - → SATS (merged into EchoStar, Dec 2023)
+  # 12. FB     - → META (Meta Platforms, Jun 2022)
+  # 13. FBHS   - → FBIN (Fortune Brands Innovations)
+  # 14. FLT    - → CPAY (Corpay, Mar 2024)
+  # 15. GPS    - → GAP (Gap Inc., Aug 2024)
+  # 16. HCP    - → DOC (Healthpeak Properties)
+  # 17. HFC    - → DINO (HF Sinclair, Mar 2022)
+  # 18. JEC    - → J (Jacobs Solutions, Dec 2019)
+  # 19. MMC    - → MRSH (Marsh McLennan, Jan 2026)
+  # 20. PKI    - → RVTY (Revvity, May 2023)
+  # 21. RE     - → EG (Everest Group, Jul 2023)
+  # 22. SYMC   - → GEN (Symantec → NortonLifeLock → Gen Digital, Nov 2019)
+  # 23. TMK    - → GL (Globe Life, Aug 2019)
+  # 24. WLTW   - → WTW (Willis Towers Watson, Jan 2022)
+  # 25. WRK    - → SW (Smurfit Westrock, Jul 2024)
+  - ABC
+  - ADS
+  - ANTM
+  - APC
+  - ARNC
+  - BHGE
+  - BLL
+  - CBS
+  - COG
+  - CTL
+  - DISH
+  - FB
+  - FBHS
+  - FLT
+  - GPS
+  - HCP
+  - HFC
+  - JEC
+  - MMC
+  - PKI
+  - RE
+  - SYMC
+  - TMK
+  - WLTW
+  - WRK
 
 validation:
   min_price_rows: 200
