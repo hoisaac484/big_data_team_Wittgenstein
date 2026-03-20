@@ -82,7 +82,7 @@ from the most recent non-null value for the same symbol.
 Concurrency and rate limiting
 -----------------------------
 
-**Fundamentals fetching** uses a ``ThreadPoolExecutor`` with 4 workers
+**Fundamentals fetching** uses a ``ThreadPoolExecutor`` with 5 workers
 to fetch multiple symbols concurrently. Each worker runs the full
 waterfall (EDGAR → SimFin → yfinance) for one symbol at a time.
 

@@ -34,8 +34,8 @@ poetry run python main.py --no-schedule
 You can also run individual stages:
 
 ```bash
-poetry run python main.py --no-schedule --prices-only
-poetry run python main.py --no-schedule --fundamentals-only
+poetry run python main.py --no-schedule --task prices
+poetry run python main.py --no-schedule --task fundamentals
 ```
 
 Without `--no-schedule`, the pipeline starts a recurring scheduler (see [Scheduling](#scheduling) below).
@@ -73,7 +73,7 @@ All settings are in `config/conf.yaml`.
 
 ## Pipeline stages
 
-1. **Fetch** — pulls prices, financials, and risk-free rates from external APIs. Prices are downloaded in a single yfinance batch call; any symbols silently dropped by the batch are retried individually. Fundamentals are fetched concurrently (4 threads) using a waterfall strategy: EDGAR first, then SimFin to fill gaps, then yfinance as a last resort, with remaining nulls forward-filled from prior quarters. All fetched data is cached as parquet files in MinIO (see [Caching](#caching)).
+1. **Fetch** — pulls prices, financials, and risk-free rates from external APIs. Prices are downloaded in a single yfinance batch call; any symbols silently dropped by the batch are retried individually. Fundamentals are fetched concurrently (5 threads) using a waterfall strategy: EDGAR first, then SimFin to fill gaps, then yfinance as a last resort, with remaining nulls forward-filled from prior quarters. All fetched data is cached as parquet files in MinIO (see [Caching](#caching)).
 2. **Validate** — checks each dataset against configurable thresholds: minimum row count (200), minimum date coverage (4 years), maximum null percentage (50%), and duplicate keys. Sparse data (e.g. newly listed companies) triggers warnings but still passes. Corrupt or empty data raises errors, which halt the pipeline when `validation.strict` is `true`.
 3. **Load** — writes validated DataFrames to PostgreSQL. Before each insert, existing rows are checked by primary key to prevent duplicates. Raw API responses are logged to MongoDB as timestamped audit documents for traceability.
 

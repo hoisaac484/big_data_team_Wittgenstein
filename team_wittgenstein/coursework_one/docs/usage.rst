@@ -50,10 +50,10 @@ Command-line flags
     pipeline starts a recurring scheduler (prices monthly, fundamentals
     quarterly) that keeps running in the background.
 
-``--prices-only``
+``--task prices``
     Run only the prices and risk-free rates stage.
 
-``--fundamentals-only``
+``--task fundamentals``
     Run only the fundamentals stage.
 
 Dev mode
