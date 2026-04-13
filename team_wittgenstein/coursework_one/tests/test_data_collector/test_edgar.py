@@ -504,7 +504,9 @@ class TestEdgarGetFiscalPeriods:
                 return recent_payload
             return older_batch
 
-        with patch.object(fetcher, "_edgar_get_json", side_effect=_get_json_side_effect):
+        with patch.object(
+            fetcher, "_edgar_get_json", side_effect=_get_json_side_effect
+        ):
             result = fetcher._edgar_get_fiscal_periods("0000320193")
 
         assert not result.empty
@@ -546,7 +548,9 @@ class TestEdgarGetFiscalPeriods:
                 return None
             return recent_payload
 
-        with patch.object(fetcher, "_edgar_get_json", side_effect=_get_json_side_effect):
+        with patch.object(
+            fetcher, "_edgar_get_json", side_effect=_get_json_side_effect
+        ):
             result = fetcher._edgar_get_fiscal_periods("0000320193")
         assert not result.empty
 
