@@ -481,6 +481,75 @@ class TestEdgarGetFiscalPeriods:
         assert "fiscal_year" in result.columns
         assert "fiscal_quarter" in result.columns
 
+    def test_paginates_older_filing_batches(self, fetcher):
+        """filings.files older batches are merged into the main filings dict."""
+        recent_payload = {
+            "filings": {
+                "recent": {
+                    "form": ["10-Q", "10-Q"],
+                    "reportDate": ["2024-06-30", "2024-03-31"],
+                    "filingDate": ["2024-08-01", "2024-05-01"],
+                },
+                "files": [{"name": "submissions-001.json"}],
+            }
+        }
+        older_batch = {
+            "form": ["10-K", "10-Q"],
+            "reportDate": ["2023-09-30", "2023-06-30"],
+            "filingDate": ["2023-11-01", "2023-08-01"],
+        }
+
+        def _get_json_side_effect(url, **kwargs):
+            if "CIK" in url and "submissions" not in url.split("/")[-1]:
+                return recent_payload
+            return older_batch
+
+        with patch.object(fetcher, "_edgar_get_json", side_effect=_get_json_side_effect):
+            result = fetcher._edgar_get_fiscal_periods("0000320193")
+
+        assert not result.empty
+        # Q1 from older batch (2023-06-30) should appear
+        dates = result["report_date"].dt.strftime("%Y-%m-%d").tolist()
+        assert "2023-06-30" in dates
+
+    def test_pagination_skips_empty_filename(self, fetcher):
+        """File entry with empty name is skipped without error."""
+        payload = {
+            "filings": {
+                "recent": {
+                    "form": ["10-K"],
+                    "reportDate": ["2024-09-30"],
+                    "filingDate": ["2024-11-01"],
+                },
+                "files": [{"name": ""}],
+            }
+        }
+        with patch.object(fetcher, "_edgar_get_json", return_value=payload):
+            result = fetcher._edgar_get_fiscal_periods("0000320193")
+        assert not result.empty
+
+    def test_pagination_skips_failed_fetch(self, fetcher):
+        """File entry whose fetch returns None is skipped without error."""
+        recent_payload = {
+            "filings": {
+                "recent": {
+                    "form": ["10-K"],
+                    "reportDate": ["2024-09-30"],
+                    "filingDate": ["2024-11-01"],
+                },
+                "files": [{"name": "submissions-001.json"}],
+            }
+        }
+
+        def _get_json_side_effect(url, **kwargs):
+            if "submissions-001" in url:
+                return None
+            return recent_payload
+
+        with patch.object(fetcher, "_edgar_get_json", side_effect=_get_json_side_effect):
+            result = fetcher._edgar_get_fiscal_periods("0000320193")
+        assert not result.empty
+
     def test_no_payload(self, fetcher):
         with patch.object(fetcher, "_edgar_get_json", return_value=None):
             result = fetcher._edgar_get_fiscal_periods("0000320193")
