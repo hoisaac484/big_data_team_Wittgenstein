@@ -1,0 +1,12 @@
+postgres:
+  host: "localhost"
+  port: 5439
+  database: "fift"
+  user: "postgres"
+  password: "postgres"
+
+liquidity:
+  adtv_lookback_days: 20
+  illiq_lookback_days: 21
+  illiq_removal_pct: 0.10
+  adtv_min_dollar: 1_000_000

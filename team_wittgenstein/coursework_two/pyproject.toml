@@ -1,0 +1,39 @@
+[tool.poetry]
+name = "coursework-two"
+version = "0.1.0"
+description = "Big Data in Quantitative Finance - Coursework Two: 130/30 Multi-Factor Strategy"
+authors = ["Team Wittgenstein"]
+packages = [{include = "modules"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+sqlalchemy = "^2.0"
+psycopg2-binary = "^2.9"
+numpy = "^1.24"
+pandas = "^2.0"
+pyyaml = "^6.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
+pytest-cov = "^6.0"
+pytest-mock = "^3.0"
+black = "^26.3"
+isort = "^5.0"
+flake8 = "^7.0"
+
+[tool.black]
+line-length = 88
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+omit = ["modules/db/*"]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
