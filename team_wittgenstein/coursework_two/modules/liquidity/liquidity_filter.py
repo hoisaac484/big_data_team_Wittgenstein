@@ -128,9 +128,7 @@ def apply_illiq_filter(
 
     illiq_df = illiq_df.copy()
     illiq_df["illiq_rank_pct"] = illiq_df["amihud_illiq"].rank(pct=True)
-    survivors = illiq_df[
-        illiq_df["illiq_rank_pct"] <= (1.0 - removal_pct)
-    ].copy()
+    survivors = illiq_df[illiq_df["illiq_rank_pct"] <= (1.0 - removal_pct)].copy()
     return survivors.reset_index(drop=True)
 
 
@@ -198,8 +196,8 @@ def run_liquidity_filter(
             prices, adtv_survivors, config.illiq_lookback_days
         )
         illiq_df["illiq_rank_pct"] = illiq_df["amihud_illiq"].rank(pct=True)
-        illiq_df["passes_illiq"] = (
-            illiq_df["illiq_rank_pct"] <= (1.0 - config.illiq_removal_pct)
+        illiq_df["passes_illiq"] = illiq_df["illiq_rank_pct"] <= (
+            1.0 - config.illiq_removal_pct
         )
     else:
         illiq_df = pd.DataFrame(
