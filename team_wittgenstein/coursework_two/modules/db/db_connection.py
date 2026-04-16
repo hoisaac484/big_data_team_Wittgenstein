@@ -1,8 +1,7 @@
-"""PostgreSQL connection module for the CW2 strategy pipeline.
+"""Database connection module for PostgreSQL, MongoDB, and MinIO.
 
-Provides read/write access to the team_wittgenstein schema in PostgreSQL.
-Adapted from the CW1 db_connection module, keeping only the methods
-needed for factor calculation, portfolio construction, and backtesting.
+Provides connection classes for all three storage systems used in the
+coursework data pipeline.
 """
 
 import logging
@@ -105,8 +104,8 @@ class PostgresConnection:
         with self.engine.begin() as conn:
             conn.execute(stmt)
 
-        logger.info(
-            "Wrote %d rows to %s.%s (ON CONFLICT DO NOTHING)",
+        logger.debug(
+            "Attempted to write %d rows to %s.%s (ON CONFLICT DO NOTHING)",
             len(df),
             schema,
             table_name,

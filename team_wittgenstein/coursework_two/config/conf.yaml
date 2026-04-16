@@ -10,3 +10,9 @@ liquidity:
   illiq_lookback_days: 21
   illiq_removal_pct: 0.10
   adtv_min_dollar: 1_000_000
+
+# Dev mode: limit symbols to avoid long runtimes during development.
+# Set enabled: false for a full production run.
+dev:
+  enabled: true
+  max_symbols: 100

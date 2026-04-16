@@ -1,11 +1,10 @@
 """Tests for the two-stage liquidity filter."""
 
 from datetime import date, timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from modules.liquidity.liquidity_filter import (
     LiquidityConfig,
@@ -16,10 +15,10 @@ from modules.liquidity.liquidity_filter import (
     run_liquidity_filter,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_prices(symbols: list[str], n_days: int, base_date: date) -> pd.DataFrame:
     """Generate synthetic price data for testing."""
@@ -40,6 +39,7 @@ def _make_prices(symbols: list[str], n_days: int, base_date: date) -> pd.DataFra
 # ---------------------------------------------------------------------------
 # compute_adtv
 # ---------------------------------------------------------------------------
+
 
 class TestComputeAdtv:
 
@@ -68,6 +68,7 @@ class TestComputeAdtv:
 # apply_adtv_floor
 # ---------------------------------------------------------------------------
 
+
 class TestApplyAdtvFloor:
 
     def test_filters_correctly(self):
@@ -92,6 +93,7 @@ class TestApplyAdtvFloor:
 # ---------------------------------------------------------------------------
 # compute_amihud_illiq
 # ---------------------------------------------------------------------------
+
 
 class TestComputeAmihudIlliq:
 
@@ -153,6 +155,7 @@ class TestComputeAmihudIlliq:
 # apply_illiq_filter
 # ---------------------------------------------------------------------------
 
+
 class TestApplyIlliqFilter:
 
     def test_removes_top_decile(self):
@@ -185,6 +188,7 @@ class TestApplyIlliqFilter:
 # ---------------------------------------------------------------------------
 # run_liquidity_filter (orchestrator)
 # ---------------------------------------------------------------------------
+
 
 class TestRunLiquidityFilter:
 
