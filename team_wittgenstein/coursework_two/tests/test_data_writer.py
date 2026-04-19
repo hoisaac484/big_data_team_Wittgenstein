@@ -191,3 +191,53 @@ class TestWriteFactorZscores:
             "df"
         )
         assert list(written_df.columns) == original_columns
+
+
+# ---------------------------------------------------------------------------
+# TestWritePortfolioPositions
+# ---------------------------------------------------------------------------
+
+
+def _make_positions_df(n: int = 4) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "rebalance_date": [date(2024, 3, 29)] * n,
+            "symbol": [f"S{i:02d}" for i in range(n)],
+            "sector": ["IT"] * n,
+            "direction": ["long"] * n,
+            "ewma_vol": [0.2] * n,
+            "risk_adj_score": [1.0] * n,
+            "target_weight": [0.05] * n,
+            "final_weight": [0.05] * n,
+            "liquidity_capped": [False] * n,
+            "trade_action": ["trade"] * n,
+        }
+    )
+
+
+class TestWritePortfolioPositions:
+
+    def test_write_portfolio_positions_empty(self):
+        writer, mock_pg = _make_writer()
+        result = writer.write_portfolio_positions(pd.DataFrame())
+        assert result == 0
+        mock_pg.write_dataframe_on_conflict_do_nothing.assert_not_called()
+
+    def test_write_portfolio_positions_none(self):
+        writer, mock_pg = _make_writer()
+        result = writer.write_portfolio_positions(None)
+        assert result == 0
+        mock_pg.write_dataframe_on_conflict_do_nothing.assert_not_called()
+
+    def test_write_portfolio_positions_returns_count(self):
+        writer, mock_pg = _make_writer()
+        n = 6
+        result = writer.write_portfolio_positions(_make_positions_df(n))
+        assert result == n
+
+    def test_write_portfolio_positions_correct_table_and_conflict(self):
+        writer, mock_pg = _make_writer()
+        writer.write_portfolio_positions(_make_positions_df(3))
+        kwargs = mock_pg.write_dataframe_on_conflict_do_nothing.call_args[1]
+        assert kwargs.get("table_name") == "portfolio_positions"
+        assert kwargs.get("conflict_columns") == ["rebalance_date", "symbol"]

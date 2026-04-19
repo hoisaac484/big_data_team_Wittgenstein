@@ -12,6 +12,8 @@ from modules.portfolio.position_builder import (
     apply_no_trade_zone,
     build_portfolio_positions,
     compute_sector_weights,
+    fetch_adv,
+    fetch_previous_weights,
     verify_constraints,
 )
 
@@ -157,6 +159,19 @@ class TestApplyLiquidityCap:
         result = apply_liquidity_cap(df, adv, aum=1e9, cap_pct=0.05)
         assert "liquidity_capped" in result.columns
 
+    def test_group_not_over_cap_is_skipped(self):
+        """Groups where no stock exceeds the cap are skipped in the inner loop."""
+        sectors = ["SectorA", "SectorA", "SectorB", "SectorB"]
+        df_in = _scored(n_long=4, n_short=0, sectors=sectors)
+        df_in = df_in[df_in["direction"] == "long"].reset_index(drop=True)
+        df = compute_sector_weights(df_in)
+        # SectorA: tiny ADV → capped; SectorB: huge ADV → never capped
+        adv_vals = df["sector"].map({"SectorA": 100.0, "SectorB": 1e12})
+        adv = pd.DataFrame({"symbol": df["symbol"], "adv_20d": adv_vals})
+        result = apply_liquidity_cap(df, adv, aum=1e9, cap_pct=0.05)
+        assert result.loc[result["sector"] == "SectorA", "liquidity_capped"].all()
+        assert not result.loc[result["sector"] == "SectorB", "liquidity_capped"].any()
+
 
 # ── apply_no_trade_zone (Step 6) ──────────────────────────────────────────────
 
@@ -229,6 +244,23 @@ class TestApplyNoTradeZone:
         )
         assert "final_weight" in result.columns
         assert "trade_action" in result.columns
+
+    def test_zero_traded_target_sum_equal_split(self):
+        """Traded stocks with zero target_weight trigger the equal-split fallback."""
+        df = pd.DataFrame(
+            [
+                {
+                    "symbol": "NEW",
+                    "sector": "SectorA",
+                    "direction": "long",
+                    "target_weight": 0.0,
+                }
+            ]
+        )
+        previous = pd.DataFrame(columns=["symbol", "direction", "final_weight"])
+        result = apply_no_trade_zone(df, previous, threshold=0.005)
+        assert result.iloc[0]["trade_action"] == "trade"
+        assert result.iloc[0]["final_weight"] == pytest.approx(0.0)
 
 
 # ── verify_constraints (Step 7) ───────────────────────────────────────────────
@@ -321,3 +353,76 @@ class TestBuildPortfolioPositions:
         """On first run (no previous positions), all trade_action should be 'trade'."""
         result = self._run(_scored(n_long=3, n_short=3))
         assert (result["trade_action"] == "trade").all()
+
+
+# ── fetch_adv ─────────────────────────────────────────────────────────────────
+
+
+class TestFetchAdv:
+
+    def test_returns_empty_when_db_returns_none(self):
+        db = MagicMock()
+        db.read_query.return_value = None
+        result = fetch_adv(db, ["AAPL"], REBALANCE)
+        assert list(result.columns) == ["symbol", "adv_20d"]
+        assert result.empty
+
+    def test_returns_empty_when_db_returns_empty(self):
+        db = MagicMock()
+        db.read_query.return_value = pd.DataFrame()
+        result = fetch_adv(db, ["AAPL"], REBALANCE)
+        assert list(result.columns) == ["symbol", "adv_20d"]
+        assert result.empty
+
+    def test_computes_rolling_mean(self):
+        """adv_20d equals the rolling mean over the lookback window."""
+        db = MagicMock()
+        lookback = 3
+        dates = pd.date_range("2024-01-01", periods=5, freq="D")
+        db.read_query.return_value = pd.DataFrame(
+            {
+                "symbol": ["AAPL"] * 5,
+                "trade_date": dates,
+                "dollar_vol": [100.0, 200.0, 300.0, 400.0, 500.0],
+            }
+        )
+        result = fetch_adv(db, ["AAPL"], REBALANCE, lookback_days=lookback)
+        # Rolling mean of last 3 values: (300 + 400 + 500) / 3 = 400.0
+        assert len(result) == 1
+        assert result.iloc[0]["symbol"] == "AAPL"
+        assert result.iloc[0]["adv_20d"] == pytest.approx(400.0)
+
+
+# ── fetch_previous_weights ────────────────────────────────────────────────────
+
+
+class TestFetchPreviousWeights:
+
+    def test_returns_empty_when_db_returns_none(self):
+        db = MagicMock()
+        db.read_query.return_value = None
+        result = fetch_previous_weights(db, REBALANCE)
+        assert result.empty
+        assert list(result.columns) == ["symbol", "direction", "final_weight"]
+
+    def test_returns_empty_when_db_returns_empty(self):
+        db = MagicMock()
+        db.read_query.return_value = pd.DataFrame(
+            columns=["symbol", "direction", "final_weight"]
+        )
+        result = fetch_previous_weights(db, REBALANCE)
+        assert result.empty
+
+    def test_passes_through_previous_weights(self):
+        db = MagicMock()
+        prev = pd.DataFrame(
+            {
+                "symbol": ["AAPL", "MSFT"],
+                "direction": ["long", "short"],
+                "final_weight": [0.10, 0.05],
+            }
+        )
+        db.read_query.return_value = prev
+        result = fetch_previous_weights(db, REBALANCE)
+        assert len(result) == 2
+        assert list(result["symbol"]) == ["AAPL", "MSFT"]
