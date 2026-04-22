@@ -211,9 +211,7 @@ def run_liquidity_filter(
         how="left",
     )
     # Stocks that failed ADTV don't have ILLIQ — mark as failed
-    all_metrics["passes_illiq"] = (
-        all_metrics["passes_illiq"].fillna(False).astype(bool)
-    )
+    all_metrics["passes_illiq"] = all_metrics["passes_illiq"].fillna(False).astype(bool)
     all_metrics["passes_filter"] = (
         all_metrics["passes_adv"] & all_metrics["passes_illiq"]
     )
