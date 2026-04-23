@@ -69,7 +69,7 @@ class RatesMixin:
                 url = (
                     f"https://stats.oecd.org/SDMX-JSON/data/"
                     f"MEI_FIN/IRSTCI01.{oecd_code}.M/all"
-                    f"?startTime=2020&endTime=2026"
+                    f"?startTime=2017&endTime=2026"
                 )
                 response = requests.get(url, timeout=15)
                 response.raise_for_status()

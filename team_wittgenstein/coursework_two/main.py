@@ -9,6 +9,7 @@ from modules.backtest.backtest_engine import BacktestConfig, run_backtest
 from modules.backtest.benchmark import backfill_benchmark_returns
 from modules.composite.composite_scorer import CompositeConfig, run_composite_scorer
 from modules.db.db_connection import PostgresConnection
+from modules.evaluation.metrics import compute_summary_metrics
 from modules.liquidity.liquidity_filter import LiquidityConfig, run_liquidity_filter
 from modules.output.data_writer import DataWriter
 from modules.portfolio.ewma_volatility import EWMAConfig, run_ewma_volatility
@@ -410,12 +411,28 @@ def run_baseline_backtest(ctx: PipelineContext) -> None:
     )
 
 
+def run_baseline_summary(ctx: PipelineContext) -> None:
+    """Step 7: compute summary metrics for the baseline scenario."""
+    risk_free_rate = ctx.cfg.get("backtest", {}).get("risk_free_rate")
+    summary = compute_summary_metrics(
+        ctx.pg, scenario_id="baseline", risk_free_rate=risk_free_rate
+    )
+    logger.info(
+        "Summary metrics | sharpe=%.3f sortino=%.3f calmar=%.3f IR=%.3f",
+        summary["sharpe_ratio"],
+        summary["sortino_ratio"],
+        summary["calmar_ratio"],
+        summary["information_ratio"],
+    )
+
+
 def main(argv=None):
     ctx = build_context()
-    backfill_factor_metrics(ctx, years=5)
-    backfill_composite_scores(ctx, years=5)
+    backfill_factor_metrics(ctx, years=9)
+    backfill_composite_scores(ctx, years=9)
     backfill_portfolio_positions(ctx, years=5)
     run_baseline_backtest(ctx)
+    run_baseline_summary(ctx)
 
 
 if __name__ == "__main__":

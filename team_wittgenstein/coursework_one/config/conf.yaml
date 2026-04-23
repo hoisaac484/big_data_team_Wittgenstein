@@ -20,10 +20,10 @@ minio:
   secure: false
 
 data:
-  price_period: "7y"
+  price_period: "10y"
   fundamentals_period: "11y"
   fundamentals_source: "waterfall" # options: waterfall (EDGAR→SimFin→yfinance→ffill), simfin
-  cache_ttl_days: 7  # Re-fetch cached data older than this many days (remove to disable)
+  cache_ttl_days: 7 # Re-fetch cached data older than this many days (remove to disable)
 
 # US-only strategy: only fetch data for US-listed companies
 country_filter: "US"

@@ -136,6 +136,30 @@ class DataWriter:
         )
         return len(df)
 
+    def write_backtest_summary(self, summary: dict) -> None:
+        """Upsert a summary row into backtest_summary keyed by scenario_id.
+
+        Deletes any existing row for the scenario_id, then inserts the new row.
+        Ensures the latest computation always overwrites prior metrics.
+
+        Args:
+            summary: Dict with keys matching backtest_summary columns (except
+                     summary_id and created_at which are auto-generated).
+        """
+        scenario_id = summary["scenario_id"]
+        self.pg.execute(
+            "DELETE FROM team_wittgenstein.backtest_summary "
+            "WHERE scenario_id = :scenario_id",
+            {"scenario_id": scenario_id},
+        )
+        df = pd.DataFrame([summary])
+        self.pg.write_dataframe(df, "backtest_summary", SCHEMA, if_exists="append")
+        logger.info(
+            "Wrote summary row to %s.backtest_summary (scenario=%s)",
+            SCHEMA,
+            scenario_id,
+        )
+
     def write_portfolio_positions(self, df: pd.DataFrame) -> int:
         """Write portfolio positions to portfolio_positions table.
 

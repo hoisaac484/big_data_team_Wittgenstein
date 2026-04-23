@@ -14,6 +14,13 @@ liquidity:
 composite:
   ic_lookback_months: 36
 
+backtest:
+  cost_bps: 25.0
+  borrow_rate: 0.0075
+  # Annualised US risk-free rate used for Sharpe/Sortino. Leave blank to
+  # average the risk_free_rates table over the backtest period.
+  risk_free_rate:
+
 portfolio:
   selection_threshold: 0.10
   buffer_exit_threshold: 0.20
