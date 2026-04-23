@@ -6,6 +6,7 @@ import pandas as pd
 import yaml
 
 from modules.backtest.backtest_engine import BacktestConfig, run_backtest
+from modules.backtest.benchmark import backfill_benchmark_returns
 from modules.composite.composite_scorer import CompositeConfig, run_composite_scorer
 from modules.db.db_connection import PostgresConnection
 from modules.liquidity.liquidity_filter import LiquidityConfig, run_liquidity_filter
@@ -376,7 +377,25 @@ def backfill_portfolio_positions(ctx: PipelineContext, years: int = 5) -> None:
 
 
 def run_baseline_backtest(ctx: PipelineContext) -> None:
-    """Steps 1-6: compute monthly returns and write to backtest_returns."""
+    """Steps 1-6: compute monthly returns and write to backtest_returns.
+
+    Caches benchmark returns in the DB first so subsequent scenario runs
+    don't need to hit yfinance.
+    """
+    # Derive benchmark date range from portfolio positions
+    date_range = ctx.pg.read_query("""
+        SELECT MIN(rebalance_date) AS min_date, MAX(rebalance_date) AS max_date
+        FROM team_wittgenstein.portfolio_positions
+        """)
+    if date_range.empty or pd.isna(date_range["min_date"].iloc[0]):
+        raise RuntimeError("No portfolio positions found — run backfill first.")
+
+    bench_start = pd.to_datetime(date_range["min_date"].iloc[0]).date()
+    bench_end = pd.to_datetime(date_range["max_date"].iloc[0]).date()
+
+    # Cache benchmark returns to DB (idempotent via ON CONFLICT DO NOTHING)
+    backfill_benchmark_returns(ctx.pg, bench_start, bench_end)
+
     config = BacktestConfig(
         cost_bps=ctx.cfg.get("backtest", {}).get("cost_bps", 25.0),
         borrow_rate=ctx.cfg.get("backtest", {}).get("borrow_rate", 0.0075),

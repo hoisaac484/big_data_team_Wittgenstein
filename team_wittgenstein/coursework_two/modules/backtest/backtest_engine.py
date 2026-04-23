@@ -13,7 +13,7 @@ from datetime import date
 import numpy as np
 import pandas as pd
 
-from modules.backtest.benchmark import fetch_benchmark_monthly_returns
+from modules.backtest.benchmark import load_benchmark_from_db
 from modules.db.db_connection import PostgresConnection
 
 logger = logging.getLogger(__name__)
@@ -238,9 +238,15 @@ def run_backtest(
     bench_start = date(rebalance_dates[0].year, rebalance_dates[0].month, 1)
     bench_end = rebalance_dates[-1]
     logger.info(
-        "Step 1: Loading MSCI USA benchmark (EUSA) %s → %s...", bench_start, bench_end
+        "Step 1: Loading MSCI USA benchmark (EUSA) from DB cache %s → %s...",
+        bench_start,
+        bench_end,
     )
-    _benchmark_raw = fetch_benchmark_monthly_returns(bench_start, bench_end)
+    _benchmark_raw = load_benchmark_from_db(db, bench_start, bench_end)
+    if _benchmark_raw.empty:
+        raise RuntimeError(
+            "benchmark_returns is empty — run backfill_benchmark_returns first."
+        )
     benchmark = {(d.year, d.month): v for d, v in _benchmark_raw.items()}
     logger.info("Loaded positions for %d rebalance dates.", len(rebalance_dates))
 

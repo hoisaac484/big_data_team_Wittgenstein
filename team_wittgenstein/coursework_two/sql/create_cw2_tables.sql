@@ -149,6 +149,20 @@ CREATE INDEX IF NOT EXISTS idx_selection_status_date
 CREATE INDEX IF NOT EXISTS idx_selection_status_symbol
     ON team_wittgenstein.selection_status (symbol);
 
+-- Cached monthly benchmark returns (MSCI USA via EUSA ETF)
+DROP TABLE IF EXISTS team_wittgenstein.benchmark_returns CASCADE;
+CREATE TABLE team_wittgenstein.benchmark_returns (
+    bench_id        SERIAL PRIMARY KEY,
+    benchmark       VARCHAR(20)     NOT NULL,
+    month_end       DATE            NOT NULL,
+    monthly_return  NUMERIC         NOT NULL,
+    created_at      TIMESTAMPTZ     DEFAULT NOW(),
+    UNIQUE (benchmark, month_end)
+);
+
+CREATE INDEX IF NOT EXISTS idx_benchmark_returns_date
+    ON team_wittgenstein.benchmark_returns (month_end);
+
 -- Monthly backtest returns per scenario
 DROP TABLE IF EXISTS team_wittgenstein.backtest_returns CASCADE;
 CREATE TABLE team_wittgenstein.backtest_returns (
@@ -183,6 +197,8 @@ CREATE TABLE team_wittgenstein.backtest_summary (
     annualised_return       NUMERIC,
     annualised_volatility   NUMERIC,
     sharpe_ratio            NUMERIC,
+    sortino_ratio           NUMERIC,
+    calmar_ratio            NUMERIC,
     information_ratio       NUMERIC,
     max_drawdown            NUMERIC,
     alpha                   NUMERIC,
