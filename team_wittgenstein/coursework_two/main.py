@@ -10,7 +10,12 @@ from modules.backtest.benchmark import backfill_benchmark_returns
 from modules.composite.composite_scorer import CompositeConfig, run_composite_scorer
 from modules.db.db_connection import PostgresConnection
 from modules.evaluation.cost_sensitivity import run_cost_sensitivity
+from modules.evaluation.factor_exclusion import (
+    FactorExclusionConfig,
+    run_factor_exclusion,
+)
 from modules.evaluation.metrics import compute_summary_metrics
+from modules.evaluation.sensitivity import run_parameter_sensitivity
 from modules.liquidity.liquidity_filter import LiquidityConfig, run_liquidity_filter
 from modules.output.data_writer import DataWriter
 from modules.portfolio.ewma_volatility import EWMAConfig, run_ewma_volatility
@@ -452,6 +457,90 @@ def run_cost_sensitivity_scenarios(ctx: PipelineContext) -> None:
     logger.info("Cost sensitivity complete: %d scenarios (%s)", len(created), created)
 
 
+def run_factor_exclusion_scenarios(ctx: PipelineContext) -> None:
+    """Step 10: run the full pipeline with each factor excluded one at a time.
+
+    Uses the in-memory pipeline so baseline DB tables are untouched. Each of
+    the 4 scenarios produces backtest_returns + backtest_summary rows with
+    scenario_id 'excl_<factor>'.
+    """
+    port_cfg_raw = ctx.cfg.get("portfolio", {})
+    bt_cfg_raw = ctx.cfg.get("backtest", {})
+    composite_cfg_raw = ctx.cfg.get("composite", {})
+
+    config = FactorExclusionConfig(
+        composite=CompositeConfig(
+            ic_lookback_months=composite_cfg_raw.get("ic_lookback_months", 36),
+        ),
+        selection=SelectionConfig(
+            selection_threshold=port_cfg_raw.get("selection_threshold", 0.10),
+            buffer_exit_threshold=port_cfg_raw.get("buffer_exit_threshold", 0.20),
+            buffer_max_months=port_cfg_raw.get("buffer_max_months", 3),
+        ),
+        ewma=EWMAConfig(
+            ewma_lambda=port_cfg_raw.get("ewma_lambda", 0.94),
+            lookback_days=port_cfg_raw.get("ewma_lookback_days", 252),
+        ),
+        position=PositionConfig(
+            aum=port_cfg_raw.get("aum", 1_000_000_000),
+            liquidity_cap_pct=port_cfg_raw.get("liquidity_cap_pct", 0.05),
+            no_trade_threshold=port_cfg_raw.get("no_trade_threshold", 0.005),
+            adv_lookback_days=port_cfg_raw.get("adv_lookback_days", 20),
+            constraint_tolerance=port_cfg_raw.get("constraint_tolerance", 0.02),
+        ),
+        backtest=BacktestConfig(
+            cost_bps=bt_cfg_raw.get("cost_bps", 25.0),
+            borrow_rate=bt_cfg_raw.get("borrow_rate", 0.0075),
+        ),
+    )
+    created = run_factor_exclusion(ctx.pg, ctx.sector_map, config)
+    logger.info("Factor exclusion complete: %d scenarios (%s)", len(created), created)
+
+
+def run_parameter_sensitivity_scenarios(ctx: PipelineContext) -> None:
+    """Step 8: vary one strategy parameter at a time, holding others at baseline.
+
+    Produces 15 scenarios in backtest_returns / backtest_summary. Uses the
+    same in-memory pipeline as factor exclusion - baseline DB tables remain
+    untouched.
+    """
+    port_cfg_raw = ctx.cfg.get("portfolio", {})
+    bt_cfg_raw = ctx.cfg.get("backtest", {})
+    composite_cfg_raw = ctx.cfg.get("composite", {})
+
+    base_config = FactorExclusionConfig(
+        composite=CompositeConfig(
+            ic_lookback_months=composite_cfg_raw.get("ic_lookback_months", 36),
+        ),
+        selection=SelectionConfig(
+            selection_threshold=port_cfg_raw.get("selection_threshold", 0.10),
+            buffer_exit_threshold=port_cfg_raw.get("buffer_exit_threshold", 0.20),
+            buffer_max_months=port_cfg_raw.get("buffer_max_months", 3),
+        ),
+        ewma=EWMAConfig(
+            ewma_lambda=port_cfg_raw.get("ewma_lambda", 0.94),
+            lookback_days=port_cfg_raw.get("ewma_lookback_days", 252),
+        ),
+        position=PositionConfig(
+            aum=port_cfg_raw.get("aum", 1_000_000_000),
+            liquidity_cap_pct=port_cfg_raw.get("liquidity_cap_pct", 0.05),
+            no_trade_threshold=port_cfg_raw.get("no_trade_threshold", 0.005),
+            adv_lookback_days=port_cfg_raw.get("adv_lookback_days", 20),
+            constraint_tolerance=port_cfg_raw.get("constraint_tolerance", 0.02),
+        ),
+        backtest=BacktestConfig(
+            cost_bps=bt_cfg_raw.get("cost_bps", 25.0),
+            borrow_rate=bt_cfg_raw.get("borrow_rate", 0.0075),
+        ),
+    )
+    created = run_parameter_sensitivity(ctx.pg, ctx.sector_map, base_config)
+    logger.info(
+        "Parameter sensitivity complete: %d scenarios (%s)",
+        len(created),
+        created,
+    )
+
+
 def main(argv=None):
     ctx = build_context()
     # Recreate the schema for a fresh full pipeline run. Sub-scripts that
@@ -464,6 +553,8 @@ def main(argv=None):
     run_baseline_backtest(ctx)
     run_baseline_summary(ctx)
     run_cost_sensitivity_scenarios(ctx)
+    run_factor_exclusion_scenarios(ctx)
+    run_parameter_sensitivity_scenarios(ctx)
 
 
 if __name__ == "__main__":
