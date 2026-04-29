@@ -262,6 +262,35 @@ class TestApplyNoTradeZone:
         assert result.iloc[0]["trade_action"] == "trade"
         assert result.iloc[0]["final_weight"] == pytest.approx(0.0)
 
+    def test_hold_within_one_percent_threshold(self):
+        """Deviation of 0.8% is below the spec 1% threshold → hold."""
+        df = self._with_weights(0.108)  # deviation = 0.008 < 0.01
+        previous = pd.DataFrame(
+            {
+                "symbol": df["symbol"].tolist(),
+                "direction": ["long"] * len(df),
+                "final_weight": [0.100] * len(df),
+            }
+        )
+        result = apply_no_trade_zone(df, previous, threshold=0.01)
+        assert (result["trade_action"] == "hold").all()
+
+    def test_trade_above_one_percent_threshold(self):
+        """Deviation of 1.5% is above the spec 1% threshold → trade."""
+        df = self._with_weights(0.115)  # deviation = 0.015 > 0.01
+        previous = pd.DataFrame(
+            {
+                "symbol": df["symbol"].tolist(),
+                "direction": ["long"] * len(df),
+                "final_weight": [0.100] * len(df),
+            }
+        )
+        result = apply_no_trade_zone(df, previous, threshold=0.01)
+        assert (result["trade_action"] == "trade").all()
+
+    def test_default_config_threshold_is_one_percent(self):
+        assert PositionConfig().no_trade_threshold == pytest.approx(0.01)
+
 
 # ── verify_constraints (Step 7) ───────────────────────────────────────────────
 

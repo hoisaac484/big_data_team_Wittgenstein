@@ -44,7 +44,8 @@ class RatesMixin:
 
         if result is not None and not result.empty:
             result = self._dedupe_dataframe("risk_free_rates", result, name="all")
-            self._cache_dataframe("risk_free_rates", "all", result, "oecd")
+            src = result["source"].iloc[0] if "source" in result.columns else "unknown"
+            self._cache_dataframe("risk_free_rates", "all", result, src)
             logger.info("Fetched risk-free rates: %d rows", len(result))
             return result
 
@@ -104,7 +105,9 @@ class RatesMixin:
                 return None
 
         if all_rates:
-            return pd.DataFrame(all_rates)
+            df = pd.DataFrame(all_rates)
+            df["source"] = "oecd"
+            return df
         return None
 
     def _fetch_rates_yfinance(self, countries):
@@ -122,7 +125,7 @@ class RatesMixin:
         logger.info("Fetching Treasury yields from yfinance...")
 
         try:
-            irx = yf.download("^IRX", period="5y", progress=False, auto_adjust=False)
+            irx = yf.download("^IRX", period="10y", progress=False, auto_adjust=False)
         except Exception as e:
             logger.error("Failed to download ^IRX: %s", e)
             return pd.DataFrame()
@@ -153,4 +156,5 @@ class RatesMixin:
 
         result = pd.concat(all_rates, ignore_index=True)
         result = result[["country", "rate_date", "rate"]]
+        result["source"] = "yfinance"
         return result

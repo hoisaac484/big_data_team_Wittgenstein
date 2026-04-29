@@ -16,6 +16,8 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 
+from modules.input.data_collector.constants import COUNTRY_CODE_TO_NAME
+
 logger = logging.getLogger(__name__)
 
 
@@ -316,9 +318,12 @@ class DataValidator:
         if dupes > 0:
             result.add_error(f"{dupes} duplicate (country, rate_date) rows")
 
-        # Check country coverage
+        # Check country coverage — translate codes to full names to match stored values
         if expected_countries is not None:
-            expected = set(c.strip() for c in expected_countries)
+            expected = set(
+                COUNTRY_CODE_TO_NAME.get(c.strip(), c.strip())
+                for c in expected_countries
+            )
             actual = set(df["country"].unique())
             missing = expected - actual
             if missing:

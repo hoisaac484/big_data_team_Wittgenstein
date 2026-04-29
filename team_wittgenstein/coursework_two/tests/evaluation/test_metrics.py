@@ -118,6 +118,9 @@ class TestDownsideDeviation:
         r = pd.Series([0.02, 0.03, 0.04])
         assert downside_deviation(r, 0.01) == 0.0
 
+    def test_empty_series_returns_zero(self):
+        assert downside_deviation(pd.Series([], dtype=float)) == 0.0
+
 
 class TestTrackingError:
 
@@ -133,6 +136,12 @@ class TestTrackingError:
         """If portfolio matches benchmark, tracking error is 0."""
         net = pd.Series([0.02, 0.01, 0.03])
         bench = pd.Series([0.02, 0.01, 0.03])
+        assert tracking_error(net, bench) == 0.0
+
+    def test_fewer_than_two_valid_diffs_returns_zero(self):
+        """With only one non-NaN diff, std is undefined → return 0."""
+        net = pd.Series([0.02, float("nan")])
+        bench = pd.Series([0.01, float("nan")])
         assert tracking_error(net, bench) == 0.0
 
 

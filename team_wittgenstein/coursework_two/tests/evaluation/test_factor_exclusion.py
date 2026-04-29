@@ -245,6 +245,48 @@ class TestBuildOneRebalance:
         assert positions.empty
         assert sel.empty
 
+    def test_empty_scored_short_circuits(self, factor_config, composite_df):
+        """If risk-adjusted scoring returns empty, return empty DataFrames."""
+        db = MagicMock()
+        selected = pd.DataFrame(
+            {
+                "symbol": ["A"],
+                "sector": ["IT"],
+                "direction": ["long"],
+                "composite_score": [1.0],
+                "status": ["long_core"],
+            }
+        )
+        with (
+            patch(
+                "modules.evaluation.factor_exclusion.run_composite_scorer",
+                return_value=composite_df,
+            ),
+            patch(
+                "modules.evaluation.factor_exclusion.run_stock_selection",
+                return_value=selected,
+            ),
+            patch(
+                "modules.evaluation.factor_exclusion.run_ewma_volatility",
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "modules.evaluation.factor_exclusion.compute_risk_adjusted_scores",
+                return_value=pd.DataFrame(),
+            ),
+        ):
+            positions, sel = _build_one_rebalance(
+                db,
+                date(2024, 1, 31),
+                {},
+                "value",
+                factor_config,
+                pd.DataFrame(),
+                pd.DataFrame(),
+            )
+        assert positions.empty
+        assert sel.empty
+
 
 # ---------------------------------------------------------------------------
 # run_factor_exclusion (orchestrator)

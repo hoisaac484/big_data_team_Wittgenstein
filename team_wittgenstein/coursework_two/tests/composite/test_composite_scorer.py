@@ -15,6 +15,7 @@ from scipy.stats import spearmanr
 
 from modules.composite.composite_scorer import (
     CompositeConfig,
+    _update_composite_scores,
     compute_composite_score,
     compute_ic_weights,
     compute_monthly_ic,
@@ -102,6 +103,47 @@ class TestComputeMonthlyIc:
         value_ic = result[result["factor_name"] == "value"]["ic_value"].iloc[0]
         expected, _ = spearmanr(z_vals, returns)
         assert abs(value_ic - expected) < 1e-10
+
+    def test_factor_with_fewer_than_10_valid_rows_skipped(self):
+        """A factor with < 10 non-NaN rows in a period is skipped."""
+        n = 15
+        np.random.seed(1)
+        factor_scores = pd.DataFrame(
+            {
+                "symbol": [f"S{i}" for i in range(n)],
+                "score_date": pd.Timestamp("2023-01-31"),
+                "z_value": np.random.randn(n),
+                "z_quality": np.random.randn(n),
+                "z_momentum": np.random.randn(n),
+                # z_low_vol: only 5 non-NaN → skipped for IC
+                "z_low_vol": [float("nan")] * 10 + list(np.random.randn(5)),
+            }
+        )
+        monthly_returns = pd.DataFrame(
+            {
+                "symbol": [f"S{i}" for i in range(n)],
+                "month_end": pd.Timestamp("2023-02-28"),
+                "monthly_return": np.random.randn(n),
+            }
+        )
+        result = compute_monthly_ic(factor_scores, monthly_returns)
+        # low_vol factor should not appear (only 5 valid rows)
+        assert "low_vol" not in result["factor_name"].values
+
+
+# ---------------------------------------------------------------------------
+# _update_composite_scores
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateCompositeScores:
+
+    def test_empty_composite_is_noop(self):
+        """_update_composite_scores returns immediately on empty input."""
+        db = MagicMock()
+        _update_composite_scores(db, pd.DataFrame(), date(2024, 1, 31))
+        db.execute.assert_not_called()
+        db.write_dataframe.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

@@ -358,3 +358,28 @@ class TestWritePortfolioPositions:
         kwargs = mock_pg.write_dataframe_on_conflict_do_nothing.call_args[1]
         assert kwargs.get("table_name") == "portfolio_positions"
         assert kwargs.get("conflict_columns") == ["rebalance_date", "symbol"]
+
+
+class TestWriteBacktestSummary:
+
+    def test_deletes_existing_then_writes(self):
+        writer, mock_pg = _make_writer()
+        summary = {"scenario_id": "baseline", "annualised_return": 0.12}
+        writer.write_backtest_summary(summary)
+        mock_pg.execute.assert_called_once()
+        call_sql = mock_pg.execute.call_args[0][0]
+        assert "DELETE" in call_sql
+        assert "baseline" in str(mock_pg.execute.call_args)
+        mock_pg.write_dataframe.assert_called_once()
+
+    def test_write_dataframe_called_with_correct_table(self):
+        writer, mock_pg = _make_writer()
+        writer.write_backtest_summary({"scenario_id": "test"})
+        args = mock_pg.write_dataframe.call_args[0]
+        assert args[1] == "backtest_summary"
+
+    def test_write_dataframe_uses_append(self):
+        writer, mock_pg = _make_writer()
+        writer.write_backtest_summary({"scenario_id": "test"})
+        kwargs = mock_pg.write_dataframe.call_args[1]
+        assert kwargs.get("if_exists") == "append"

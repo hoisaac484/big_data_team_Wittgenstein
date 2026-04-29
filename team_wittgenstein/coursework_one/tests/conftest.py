@@ -70,7 +70,7 @@ def sample_financials_df():
 def sample_rates_df():
     """Valid risk-free rates DataFrame: 2 countries, recent dates."""
     rows = []
-    for country in ["US", "GB"]:
+    for country in ["United States", "United Kingdom"]:
         for i in range(30):
             rows.append(
                 {

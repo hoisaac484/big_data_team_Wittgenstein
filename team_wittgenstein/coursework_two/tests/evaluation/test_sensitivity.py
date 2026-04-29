@@ -262,3 +262,23 @@ class TestRunParameterSensitivity:
         first_call = mock_build.call_args_list[0]
         config_passed = first_call.args[4]  # 5th positional arg
         assert config_passed.selection.selection_threshold == 0.05
+
+    def test_skip_existing_skips_completed_scenarios(self, base_config):
+        """skip_existing=True skips scenarios already in backtest_summary."""
+        db = MagicMock()
+        rebalance_dates_df = pd.DataFrame({"rebalance_date": [date(2024, 1, 31)]})
+        # First read_query returns dates, second returns existing scenario IDs
+        existing_df = pd.DataFrame(
+            {"scenario_id": list(v[0] for v in SENSITIVITY_VARIANTS)}
+        )
+        db.read_query.side_effect = [rebalance_dates_df, existing_df]
+
+        with (
+            patch("modules.evaluation.sensitivity._build_one_rebalance") as mock_build,
+            patch("modules.evaluation.sensitivity.DataWriter"),
+        ):
+            result = run_parameter_sensitivity(db, {}, base_config, skip_existing=True)
+
+        # All 15 already exist → none built
+        mock_build.assert_not_called()
+        assert result == []

@@ -135,12 +135,14 @@ def build_context() -> PipelineContext:
 
     pg_cfg = cfg["postgres"]
 
+    import os
+
     pg = PostgresConnection(
-        host=pg_cfg["host"],
-        port=pg_cfg["port"],
-        database=pg_cfg["database"],
-        user=pg_cfg["user"],
-        password=pg_cfg["password"],
+        host=os.getenv("DB_HOST", pg_cfg["host"]),
+        port=int(os.getenv("DB_PORT", pg_cfg["port"])),
+        database=os.getenv("DB_NAME", pg_cfg["database"]),
+        user=os.getenv("DB_USER", pg_cfg["user"]),
+        password=os.getenv("DB_PASSWORD", pg_cfg["password"]),
     )
 
     if not pg.test_connection():

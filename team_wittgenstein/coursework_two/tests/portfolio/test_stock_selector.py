@@ -354,3 +354,11 @@ class TestRunStockSelection:
         result = fetch_previous_selection(db, date(2024, 1, 31))
         assert len(result) == 1
         assert result.iloc[0]["symbol"] == "A"
+
+    def test_persist_selection_status_empty_is_noop(self):
+        """persist_selection_status does nothing when selection is empty."""
+        from modules.portfolio.stock_selector import persist_selection_status
+
+        db = MagicMock()
+        persist_selection_status(db, pd.DataFrame())
+        db.write_dataframe_on_conflict_do_nothing.assert_not_called()

@@ -47,7 +47,7 @@ class PositionConfig:
 
     aum: float = 1_000_000_000.0  # $1 B AUM
     liquidity_cap_pct: float = 0.05  # max 5 % of 20-day ADV per position
-    no_trade_threshold: float = 0.005  # 0.5 % weight deviation triggers a trade
+    no_trade_threshold: float = 0.01  # 1.0 % weight deviation triggers a trade
     adv_lookback_days: int = 20
     constraint_tolerance: float = 0.02  # 2 % slack in constraint checks
 
