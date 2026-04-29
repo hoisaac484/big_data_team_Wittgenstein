@@ -8,49 +8,85 @@ Reads the raw price, financial, and risk-free-rate data populated by [Coursework
 
 - Python 3.10+
 - [Poetry](https://python-poetry.org/) for dependency management
-- Docker and Docker Compose for running PostgreSQL, MongoDB, and MinIO
-- **Coursework One must have been run at least once** so that price, financial, and risk-free-rate tables are populated. See the [CW1 README](../coursework_one/README.md).
+- Docker and Docker Compose for running PostgreSQL, MongoDB, MinIO, and the dashboard
 
-## Quickstart
+There are two ways to run this:
 
-Start the backing services:
+- **Quick Start** (~30 seconds) - load the pre-built database dump and launch the dashboard. Best for graders who just want to view results. **Does not require CW1.**
+- **Full Pipeline** (~2-3 hours) - run CW1 + CW2 from scratch, regenerate everything. Best if you want to verify the code reproduces the results. **CW1 must run first** to populate price, financial, and risk-free-rate tables. See the [CW1 README](../coursework_one/README.md).
+
+## Quick Start (recommended for first look)
+
+Loads the committed seed file into Postgres and launches the dashboard. No CW1 / CW2 pipeline needed.
 
 ```bash
+# 1 — start platform Postgres
+cd /path/to/repo
 docker compose up -d
+
+# 2 — load seed into platform Postgres
+gunzip -c team_wittgenstein/coursework_two/docker/seed/seed.sql.gz \
+  | docker exec -i postgres_db_cw psql -U postgres -d fift
+
+# 3 — start Streamlit dashboard
+cd team_wittgenstein/coursework_two
+docker compose up --build
+# Open http://localhost:8501
+
+# 4 — teardown
+docker compose down
+cd /path/to/repo
+docker compose down
 ```
 
-Run the CW1 pipeline first (only needed once on a fresh database):
+The seed file (`docker/seed/seed.sql.gz`) is a snapshot of the `team_wittgenstein` schema after a full pipeline run. It contains all 23 backtest scenarios plus baseline factor scores, IC weights, and portfolio positions.
+
+## Full Pipeline (run from scratch)
+
+Use this if you want to reproduce the data yourself instead of trusting the seed.
 
 ```bash
+# 1 — start platform Postgres
+cd /path/to/repo
+docker compose up -d
+
+# 2 — run CW1 (data ingestion, ~30-60 min)
 cd team_wittgenstein/coursework_one
 poetry install
-poetry run python main.py --no-schedule
-```
+poetry run python main.py
 
-Then install CW2 dependencies and run the full backtest:
-
-```bash
+# 3 — run CW2 (factor scoring + 23 scenarios, ~1.5-2.5 hours)
 cd ../coursework_two
 poetry install
 poetry run python main.py
+
+# 4 — start Streamlit dashboard
+docker compose up --build
+# Open http://localhost:8501
+
+# 5 — teardown
+docker compose down
+cd /path/to/repo
+docker compose down
 ```
 
-This runs the full pipeline end-to-end:
-
-1. Wipes and recreates the CW2 schema
-2. Computes factor scores, IC weights, and portfolio positions
-3. Runs the baseline backtest plus 22 variant scenarios
-4. Generates the report charts and tables in `reports/`
-
-Total runtime: 1.5 - 2.5 hours depending on machine speed (factor scoring and parameter sensitivity dominate).
-
-When done, launch the dashboard:
+After the CW2 pipeline finishes, you can also launch the dashboard locally without Docker:
 
 ```bash
 poetry run streamlit run dashboard/Home.py
 ```
 
-A browser opens automatically at `http://localhost:8501`.
+## Regenerating the seed
+
+If you re-run the full pipeline and want to update the committed seed (e.g. after fixing strategy logic), dump the schema and gzip it:
+
+```bash
+docker exec postgres_db_cw pg_dump -U postgres -d fift \
+  --schema=team_wittgenstein --no-owner --no-acl \
+  | gzip > team_wittgenstein/coursework_two/docker/seed/seed.sql.gz
+```
+
+Run this from the **repo root**. The resulting file is ~43 MB.
 
 ## Project structure
 
