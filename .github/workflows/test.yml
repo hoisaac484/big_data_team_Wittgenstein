@@ -111,5 +111,8 @@ jobs:
       - name: Scan code with Bandit
         run: poetry run bandit -c pyproject.toml -r modules/ main.py
 
+      - name: Upgrade pip to fix CVE-2026-3219
+        run: pip install --upgrade pip
+
       - name: Audit dependencies with pip-audit
         run: poetry run pip-audit
