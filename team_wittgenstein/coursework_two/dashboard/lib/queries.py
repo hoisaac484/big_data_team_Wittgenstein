@@ -37,9 +37,12 @@ def get_database_stats() -> dict:
                FROM team_wittgenstein.price_data p
                INNER JOIN team_wittgenstein.financial_data f
                  ON p.symbol = f.symbol) AS stocks_used,
-            (SELECT COUNT(DISTINCT rebalance_date) FROM team_wittgenstein.portfolio_positions) AS months,
-            (SELECT MIN(rebalance_date) FROM team_wittgenstein.portfolio_positions) AS start_date,
-            (SELECT MAX(rebalance_date) FROM team_wittgenstein.portfolio_positions) AS end_date
+            (SELECT COUNT(DISTINCT rebalance_date)
+               FROM team_wittgenstein.portfolio_positions) AS months,
+            (SELECT MIN(rebalance_date)
+               FROM team_wittgenstein.portfolio_positions) AS start_date,
+            (SELECT MAX(rebalance_date)
+               FROM team_wittgenstein.portfolio_positions) AS end_date
         """)
     return df.iloc[0].to_dict() if not df.empty else {}
 

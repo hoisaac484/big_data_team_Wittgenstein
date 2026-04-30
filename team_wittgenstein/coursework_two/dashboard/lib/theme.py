@@ -224,7 +224,10 @@ CUSTOM_CSS = f"""
     .badge-success {{ background: rgba(0,200,5,0.12); color: {COLORS['success']}; }}
     .badge-warning {{ background: rgba(255,176,32,0.12); color: {COLORS['warning']}; }}
     .badge-danger  {{ background: rgba(255,59,48,0.12);  color: {COLORS['danger']}; }}
-    .badge-info    {{ background: rgba(0,180,216,0.12);  color: {COLORS['secondary']}; }}
+    .badge-info    {{
+        background: rgba(0,180,216,0.12);
+        color: {COLORS['secondary']};
+    }}
 
     /* Hide hamburger menu, footer, and de-clutter header */
     #MainMenu {{visibility: hidden;}}

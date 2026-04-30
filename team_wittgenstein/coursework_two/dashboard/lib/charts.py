@@ -72,7 +72,9 @@ def equity_curve(returns: pd.DataFrame, show_benchmark: bool = True) -> go.Figur
                 y=bench_cum,
                 name="MSCI USA",
                 line=dict(color=COLORS["secondary"], width=2, dash="dash"),
-                hovertemplate="<b>Benchmark</b><br>%{x|%b %Y}<br>%{y:.2f}%<extra></extra>",
+                hovertemplate=(
+                    "<b>Benchmark</b><br>%{x|%b %Y}<br>%{y:.2f}%<extra></extra>"
+                ),
             )
         )
 
@@ -346,7 +348,10 @@ def ic_weights_evolution(ic_weights: pd.DataFrame) -> go.Figure:
                     name=factor.replace("_", " ").title(),
                     line=dict(color=FACTORS[factor], width=2),
                     stackgroup="one",
-                    hovertemplate="<b>%{fullData.name}</b><br>%{x|%b %Y}<br>%{y:.3f}<extra></extra>",
+                    hovertemplate=(
+                        "<b>%{fullData.name}</b><br>"
+                        "%{x|%b %Y}<br>%{y:.3f}<extra></extra>"
+                    ),
                 )
             )
 
@@ -511,7 +516,9 @@ def equity_curve_compare(
                 y=cum_a,
                 name=label_a,
                 line=dict(color=COLORS["primary"], width=2.5),
-                hovertemplate=f"<b>{label_a}</b><br>%{{x|%b %Y}}<br>%{{y:.2f}}%<extra></extra>",
+                hovertemplate=(
+                    f"<b>{label_a}</b><br>" "%{x|%b %Y}<br>%{y:.2f}%<extra></extra>"
+                ),
             )
         )
 
@@ -523,7 +530,9 @@ def equity_curve_compare(
                 y=cum_b,
                 name=label_b,
                 line=dict(color=COLORS["secondary"], width=2.5, dash="dash"),
-                hovertemplate=f"<b>{label_b}</b><br>%{{x|%b %Y}}<br>%{{y:.2f}}%<extra></extra>",
+                hovertemplate=(
+                    f"<b>{label_b}</b><br>" "%{x|%b %Y}<br>%{y:.2f}%<extra></extra>"
+                ),
             )
         )
 
@@ -905,7 +914,10 @@ def selection_status_over_time(status_history: pd.DataFrame) -> go.Figure:
                     line=dict(width=0.5, color=status_colors[status_key]),
                     fillcolor=status_colors[status_key],
                     stackgroup="one",
-                    hovertemplate="<b>%{fullData.name}</b><br>%{x|%b %Y}<br>%{y} stocks<extra></extra>",
+                    hovertemplate=(
+                        "<b>%{fullData.name}</b><br>"
+                        "%{x|%b %Y}<br>%{y} stocks<extra></extra>"
+                    ),
                 )
             )
 

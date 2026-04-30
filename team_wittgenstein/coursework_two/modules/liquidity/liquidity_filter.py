@@ -211,8 +211,11 @@ def run_liquidity_filter(
         on="symbol",
         how="left",
     )
-    # Stocks that failed ADTV don't have ILLIQ — mark as failed
-    all_metrics["passes_illiq"] = all_metrics["passes_illiq"].fillna(False).astype(bool)
+    # Stocks that failed ADTV don't have ILLIQ - mark as failed.
+    # Cast first to avoid pandas 3.0 silent-downcast deprecation on object dtype.
+    all_metrics["passes_illiq"] = (
+        all_metrics["passes_illiq"].astype("boolean").fillna(False).astype(bool)
+    )
     all_metrics["passes_filter"] = (
         all_metrics["passes_adv"] & all_metrics["passes_illiq"]
     )

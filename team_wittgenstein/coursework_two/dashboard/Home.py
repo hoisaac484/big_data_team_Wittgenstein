@@ -62,7 +62,8 @@ hero_header(
 section_header(
     "Strategy pipeline",
     "Each rebalance month, the strategy runs every stock through the same "
-    "pipeline. Performance metrics and the equity curve are on the **Performance** page.",
+    "pipeline. Performance metrics and the equity curve are on "
+    "the **Performance** page.",
 )
 
 
@@ -214,7 +215,8 @@ with left:
         - **Risk-adjusted** position sizing (composite ÷ EWMA volatility)
         - **Liquidity aware** at both universe and position level
         - **Walk-forward backtest** with point-in-time data, no look-ahead
-        - **Pre-filter universe:** {big_num(stats.get('stocks_used', 0))} US-listed stocks (before liquidity filter)
+        - **Pre-filter universe:** {big_num(stats.get('stocks_used', 0))} US stocks
+          (before liquidity filter)
         - **Backtested:** {date_range}
         """)
 

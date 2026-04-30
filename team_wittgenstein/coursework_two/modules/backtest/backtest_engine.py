@@ -48,6 +48,8 @@ def _fetch_prices_at_dates(
     thin-trading edge cases.
     """
     dates_sql = ", ".join(f"'{d}'" for d in rebalance_dates)
+    # dates_sql is built from internal rebalance_date values (not user input).
+    # Schema and column names are constants.
     query = f"""
         SELECT DISTINCT ON (symbol, ref_date)
                symbol,
@@ -68,7 +70,7 @@ def _fetch_prices_at_dates(
         ) sub
         WHERE rn = 1
         ORDER BY symbol, ref_date
-    """
+    """  # nosec B608
     raw = db.read_query(query)
     if raw is None or raw.empty:
         return pd.DataFrame()

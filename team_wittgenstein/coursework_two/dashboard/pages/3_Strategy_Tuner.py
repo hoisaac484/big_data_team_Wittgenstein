@@ -300,7 +300,8 @@ else:
     section_header(
         "Your scenario vs Baseline",
         f"You changed: **{changed_label}** -> "
-        f"{scenario_label(active_scenario)}. Green delta = your scenario beats baseline.",
+        f"{scenario_label(active_scenario)}. "
+        "Green delta = your scenario beats baseline.",
     )
 
     # Column headers above all the metric rows

@@ -265,14 +265,16 @@ def _update_composite_scores(
     )
     db.write_dataframe(output, temp_table, SCHEMA, if_exists="replace")
 
-    # Bulk UPDATE factor_scores from the temp table
+    # Bulk UPDATE factor_scores from the temp table.
+    # SCHEMA and temp_table are internal constants (not user input).
+    # The user-supplied score_date is bound as a parameter.
     update_query = f"""
         UPDATE {SCHEMA}.factor_scores fs
         SET composite_score = t.composite_score
         FROM {SCHEMA}.{temp_table} t
         WHERE fs.symbol = t.symbol
           AND fs.score_date = :score_date
-    """
+    """  # nosec B608
     db.execute(update_query, {"score_date": score_date})
 
     # Clean up temp table
