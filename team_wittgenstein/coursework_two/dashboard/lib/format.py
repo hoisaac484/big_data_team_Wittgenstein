@@ -98,7 +98,7 @@ SCENARIO_LABELS = {
 
 
 def scenario_label(scenario_id: str) -> str:
-    """Human-readable label for a scenario, falling back to a parsed sens_ name."""
+    """Human-readable label for a scenario, including ``sens_*`` variants."""
     if scenario_id in SCENARIO_LABELS:
         return SCENARIO_LABELS[scenario_id]
     if scenario_id.startswith("sens_"):

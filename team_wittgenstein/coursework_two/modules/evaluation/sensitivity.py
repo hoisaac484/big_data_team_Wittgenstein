@@ -1,24 +1,21 @@
 """Step 8: Parameter sensitivity analysis.
 
-For each of 5 strategy parameters, runs the full pipeline 3 times (excluding
-the baseline value) varying that parameter while holding all others at
-baseline. Produces 15 new scenarios in `backtest_returns` and
-`backtest_summary` keyed by scenario_id.
+For each of five strategy parameters, runs the full pipeline three times
+(excluding the baseline value) while holding all other parameters fixed.
+Produces 15 new scenarios in ``backtest_returns`` and ``backtest_summary``.
 
-Implementation reuses the in-memory pipeline helper from factor_exclusion
-(_build_one_rebalance with excluded_factor=None). This keeps baseline DB
-tables intact (per Q2 Option A) while letting each variant override its
-own no_trade / buffer / IC lookback / EWMA decay / selection threshold.
+Implementation reuses the in-memory pipeline helper from
+``factor_exclusion._build_one_rebalance`` with ``excluded_factor=None``. This
+keeps the baseline database tables intact while letting each variant override
+its own no-trade threshold, buffer threshold, IC lookback, EWMA decay, or
+selection threshold.
 
-Parameter grid (baseline values omitted - already in DB as 'baseline'):
-
-| Parameter             | Test values         |
-|-----------------------|---------------------|
-| selection_threshold   | 0.05, 0.15, 0.20    |
-| ic_lookback_months    | 24, 48, 60          |
-| ewma_lambda           | 0.90, 0.92, 0.97    |
-| no_trade_threshold    | 0.005, 0.015, 0.020 |
-| buffer_exit_threshold | 0.10 (no buffer), 0.15, 0.25 |
+Parameter grid summary, excluding the existing ``baseline`` scenario:
+- ``selection_threshold``: 0.05, 0.15, 0.20
+- ``ic_lookback_months``: 24, 48, 60
+- ``ewma_lambda``: 0.90, 0.92, 0.97
+- ``no_trade_threshold``: 0.005, 0.015, 0.020
+- ``buffer_exit_threshold``: 0.10, 0.15, 0.25
 """
 
 import logging

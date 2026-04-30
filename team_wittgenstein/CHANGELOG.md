@@ -4,16 +4,53 @@ All notable changes to the Wittgenstein data pipeline are documented here.
 
 ## [Unreleased]
 
+---
+
+## [0.5.0] - 2026-04-30
+
 ### Added
+- Coursework Two Sphinx documentation:
+  - `docs/Makefile` build wrapper
+  - installation, usage, pipeline, dashboard, and schema pages
+  - API documentation for `modules/*` and `dashboard/lib/*`
 - Waterfall early-exit: SimFin and yfinance are skipped when the upstream
   source already covers all fill fields with no nulls, reducing unnecessary
   API calls for well-covered symbols
+- Streamlit dashboard Quick Start mode backed by a committed compressed
+  `seed.sql.gz` snapshot for graders and reviewers
+- Coursework Two dashboard:
+  - multi-page Streamlit app
+  - reusable chart, query, formatting, component, theme, and DB helper layers
+  - expanded dashboard test coverage
+- Coursework Two scenario analysis extensions:
+  - benchmark caching and benchmark risk metrics
+  - summary metrics, cost sensitivity, factor exclusion, parameter sensitivity
+  - visualisation/reporting outputs
+
+### Changed
+- Coursework Two README expanded with:
+  - Quick Start and Full Pipeline run modes
+  - seed regeneration workflow
+  - direct database inspection and stage-by-stage execution guidance
+- Streamlit app launch model simplified by removing Dockerised Streamlit in
+  favour of local `poetry run streamlit run ...`
+- Teammate dashboard integration updated, including Docker wiring changes and
+  Streamlit width API adjustments
 
 ### Fixed
 - EDGAR submissions archive fetching: `_edgar_get_fiscal_periods` now reads
   `filings.files` archive entries in addition to `filings.recent`, preventing
   silent data loss for companies whose older 10-Q/10-K filings were pushed out
   of the ~1 000-entry `recent` window (e.g. JPM was missing ~65 quarters)
+- Sphinx build stability for Coursework Two:
+  - malformed docstrings normalised so autodoc no longer emits substitution /
+    indentation errors
+  - docs navigation corrected so pages like Installation and Usage appear
+    consistently in the sidebar
+- Minor tooling fixes:
+  - missing import-spacing blank line added for `isort`
+  - DB env var override and additional tests brought Coursework Two coverage up
+    to 99%
 
 ---
 

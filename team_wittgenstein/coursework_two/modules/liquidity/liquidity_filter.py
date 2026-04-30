@@ -93,8 +93,9 @@ def compute_amihud_illiq(
 ) -> pd.DataFrame:
     """Compute Amihud ILLIQ for ADTV survivors over the trailing window.
 
-    ILLIQ = mean(|log_return| / dollar_volume) over `lookback` days.
-    Returns one row per symbol with column 'amihud_illiq'.
+    ILLIQ is the mean of ``abs(log_return) / dollar_volume`` over the trailing
+    ``lookback`` days. Returns one row per symbol with column
+    ``amihud_illiq``.
     """
     df = prices[prices["symbol"].isin(adtv_survivors)].copy()
     df = df.sort_values(["symbol", "trade_date"])

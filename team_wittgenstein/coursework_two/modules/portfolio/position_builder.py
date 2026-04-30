@@ -1,28 +1,22 @@
 """Steps 4-7: Portfolio weight construction for the 130/30 strategy.
 
-Step 4 — Normalise within sector:
-    w_i = (risk_adj_i / sum(risk_adj_sector_direction)) * sector_budget
-    Long budget per sector  = 1.3 / K_long
-    Short budget per sector = 0.3 / K_short
-    where K = number of sectors that have stocks selected in that direction.
+Step 4 normalises risk-adjusted scores within each sector and direction.
+Target weights follow ``risk_adj_score / sector_group_sum * sector_budget``.
+The long budget per sector is ``1.3 / K_long`` and the short budget per sector
+is ``0.3 / K_short``, where ``K`` is the number of active sectors in that
+direction.
 
-Step 5 — Liquidity cap:
-    dollar_position = w_i * AUM
-    If dollar_position > liquidity_cap_pct * 20-day ADV:
-        cap weight, redistribute excess pro-rata to uncapped stocks in the
-        same sector and direction.
+Step 5 applies a liquidity cap. If ``weight * AUM`` exceeds
+``liquidity_cap_pct * 20-day ADV``, the position is capped and excess weight is
+redistributed pro-rata to uncapped names in the same sector and direction.
 
-Step 6 — No-trade zone:
-    deviation = |target_weight - prev_final_weight|
-    If deviation < threshold: hold (final_weight = prev_final_weight)
-    If deviation >= threshold: trade (final_weight = target_weight)
-    New entries always trade.
+Step 6 applies the no-trade zone. If
+``abs(target_weight - prev_final_weight) < threshold``, the prior weight is
+held. Otherwise the new target weight is traded. New entries always trade.
 
-Step 7 — Constraint verification:
-    sum(long final_weights)  ~= 1.3
-    sum(short final_weights) ~= 0.3  (stored as positive; direction='short')
-    net exposure             ~= 1.0
-    Logs warnings on violation — does not raise.
+Step 7 verifies the portfolio constraints. Long gross should be about 1.3,
+short gross about 0.3, and net exposure about 1.0. Violations are logged as
+warnings rather than raised as exceptions.
 """
 
 import logging
@@ -134,10 +128,10 @@ def fetch_previous_weights(
 def compute_sector_weights(scored: pd.DataFrame) -> pd.DataFrame:
     """Normalise risk-adjusted scores into target portfolio weights (Step 4).
 
-    Within each (sector, direction) group the weight is proportional to
-    risk_adj_score and scaled to the per-sector budget:
-        Long:  budget = LONG_BUDGET  / K_long   (K_long  = sectors with longs)
-        Short: budget = SHORT_BUDGET / K_short  (K_short = sectors with shorts)
+    Within each ``(sector, direction)`` group the weight is proportional to
+    ``risk_adj_score`` and scaled to the per-sector budget. Long groups use
+    ``LONG_BUDGET / K_long`` and short groups use ``SHORT_BUDGET / K_short``,
+    where ``K`` is the number of active sectors on that side.
 
     Args:
         scored: DataFrame with columns symbol, sector, direction,
@@ -271,10 +265,10 @@ def apply_no_trade_zone(
     """Suppress small rebalancing trades to reduce unnecessary turnover (Step 6).
 
     Rules:
-      - New position  (not in previous):  final_weight = target_weight, action = 'trade'
-      - Direction change from previous:   final_weight = target_weight, action = 'trade'
-      - |target - prev| < threshold:      final_weight = prev_weight,   action = 'hold'
-      - |target - prev| >= threshold:     final_weight = target_weight, action = 'trade'
+    - New position not in ``previous``: trade to ``target_weight``
+    - Direction change from previous month: trade to ``target_weight``
+    - ``abs(target - prev) < threshold``: hold ``prev_weight``
+    - ``abs(target - prev) >= threshold``: trade to ``target_weight``
 
     Args:
         df: DataFrame with symbol, direction, target_weight.

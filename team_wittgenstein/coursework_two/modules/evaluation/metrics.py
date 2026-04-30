@@ -1,14 +1,14 @@
 """Step 7: Summary metrics for a backtest scenario.
 
-Reads monthly returns from backtest_returns for a given scenario_id and
-computes return, risk, risk-adjusted, and trading metrics. Results are
-written to the backtest_summary table keyed by scenario_id.
+Reads monthly returns from ``backtest_returns`` for a given ``scenario_id`` and
+computes return, risk, risk-adjusted, and trading metrics. Results are written
+to ``backtest_summary`` keyed by ``scenario_id``.
 
-Formulas follow Section 4.2 of the strategy doc:
-- Sharpe   = (R_ann - R_f) / sigma_ann
-- Sortino  = (R_ann - R_f) / downside_deviation
-- Calmar   = R_ann / |max_drawdown|
-- IR       = alpha / tracking_error
+Formula summary:
+- Sharpe = ``(R_ann - R_f) / sigma_ann``
+- Sortino = ``(R_ann - R_f) / downside_deviation``
+- Calmar = ``R_ann / abs(max_drawdown)``
+- Information ratio = ``alpha / tracking_error``
 """
 
 import logging

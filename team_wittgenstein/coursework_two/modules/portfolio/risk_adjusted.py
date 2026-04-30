@@ -1,12 +1,12 @@
 """Step 3: Risk-adjusted score calculation.
 
 Scales composite scores by EWMA volatility so that high-volatility stocks
-receive smaller positions. This ensures the portfolio allocates more weight
-to stocks with better return-per-unit-of-risk.
+receive smaller positions. This allocates more weight to stocks with better
+return per unit of risk.
 
-Formulas:
-    Longs:  risk_adj_score = composite_score / ewma_vol
-    Shorts: risk_adj_score = |composite_score| / ewma_vol
+Formula summary:
+- Longs use ``composite_score / ewma_vol``
+- Shorts use ``abs(composite_score) / ewma_vol``
 """
 
 import logging

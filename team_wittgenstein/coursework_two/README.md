@@ -209,6 +209,25 @@ poetry run pytest tests/dashboard/        # all dashboard helper tests
 
 The suite has 529 tests covering the strategy pipeline (`modules/`) and the dashboard helpers (`dashboard/lib/`). Total coverage is 98%.
 
+## Documentation
+
+Build the Sphinx documentation from the `coursework_two` directory:
+
+```bash
+poetry lock
+poetry install
+cd docs
+make html
+open build/index.html
+```
+
+The docs source lives under `docs/source/` and covers:
+
+- pipeline and runtime flow
+- dashboard structure and helper APIs
+- database schema overview
+- Python API documentation for `modules/*` and `dashboard/lib/*`
+
 ## Linting and formatting
 
 ```bash

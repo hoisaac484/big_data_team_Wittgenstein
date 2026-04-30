@@ -1,24 +1,21 @@
-"""
-Stage 3, Steps 3 & 4: Z-score normalisation and sub-factor aggregation.
+"""Stage 3, Steps 3 and 4: z-score normalisation and sub-factor aggregation.
 
-Step 3 — Z-score
-    For each metric, within each (GICS sector, calc_date) group:
-        z = (x - μ_sector) / σ_sector
-    Sign convention applied so that higher z always means more attractive:
-        Flip (×-1): pb_ratio, asset_growth, leverage, earnings_stability,
-                    volatility_3m, volatility_12m
-        Keep  (+1): roe, momentum_6m, momentum_12m
+Step 3 computes sector-relative z-scores for each raw metric within each
+``(GICS sector, calc_date)`` group using ``(x - mu_sector) / sigma_sector``.
+The sign convention is adjusted so that higher z-scores are always more
+attractive. ``pb_ratio``, ``asset_growth``, ``leverage``,
+``earnings_stability``, ``volatility_3m``, and ``volatility_12m`` are flipped.
+``roe``, ``momentum_6m``, and ``momentum_12m`` retain their natural sign.
 
-Step 4 — Sub-factor aggregation
-    Equal-weighted mean of the signed z-scores within each factor:
-        value_score    = mean(z_pb, z_ag)
-        quality_score  = mean(z_roe, z_leverage, z_earn_stability)
-        momentum_score = mean(z_mom_6m, z_mom_12m)
-        lowvol_raw     = mean(z_vol_3m, z_vol_12m)   ← before orthogonalisation
+Step 4 aggregates the signed z-scores into factor-level scores using
+equal-weighted means. ``value_score`` averages price-to-book and asset growth,
+``quality_score`` averages ROE, leverage, and earnings stability,
+``momentum_score`` averages 6m and 12m momentum, and ``lowvol_raw`` averages
+3m and 12m volatility before orthogonalisation.
 
-    If one sub-metric is None for a stock, the factor score is the mean of the
-    remaining available sub-metrics. If all sub-metrics are None, the factor
-    score is None.
+If one sub-metric is missing for a stock, the factor score is the mean of the
+remaining available sub-metrics. If all sub-metrics are missing, the factor
+score remains missing.
 """
 
 import logging
@@ -62,13 +59,11 @@ def compute_factor_scores(
         sector_map: dict mapping symbol → GICS sector string.
 
     Returns:
-        Tuple of:
-          - factor_df: symbol, calc_date, value_score, quality_score,
-                       momentum_score, lowvol_raw.
-          - zscore_df: symbol, calc_date, z_pb_ratio, z_asset_growth, z_roe,
-                       z_leverage, z_earnings_stability, z_momentum_6m,
-                       z_momentum_12m, z_volatility_3m, z_volatility_12m.
-        Raw metric columns are dropped from factor_df.
+        Tuple of two dataframes:
+        - ``factor_df`` with factor-level scores by ``symbol`` and ``calc_date``
+        - ``zscore_df`` with the per-metric signed z-score audit trail
+
+        Raw metric columns are dropped from ``factor_df``.
     """
     df = df.copy()
     df["_sector"] = df["symbol"].map(sector_map)
