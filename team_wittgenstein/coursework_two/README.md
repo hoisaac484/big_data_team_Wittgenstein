@@ -214,11 +214,10 @@ The suite has 529 tests covering the strategy pipeline (`modules/`) and the dash
 Build the Sphinx documentation from the `coursework_two` directory:
 
 ```bash
-poetry lock
-poetry install
+poetry install               # ensure sphinx + myst-parser are installed
 cd docs
-make html
-open build/index.html
+poetry run make html
+open build/html/index.html
 ```
 
 The docs source lives under `docs/source/` and covers:
