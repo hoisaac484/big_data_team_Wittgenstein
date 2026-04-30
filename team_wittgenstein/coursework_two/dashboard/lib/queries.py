@@ -23,11 +23,20 @@ CACHE_TTL = 600  # 10 minutes
 
 @st.cache_data(ttl=CACHE_TTL, show_spinner=False)
 def get_database_stats() -> dict:
-    """Top-line counts shown on the Home page."""
+    """Top-line counts shown on the Home page.
+
+    `stocks_used` is the **pre-liquidity-filter** investable universe -
+    every symbol that has both price and fundamental data in the DB.
+    The strategy then applies liquidity filters monthly to narrow this
+    down to the stocks it actually scores and trades.
+    """
     df = query("""
         SELECT
             (SELECT COUNT(*) FROM team_wittgenstein.backtest_summary) AS scenarios,
-            (SELECT COUNT(DISTINCT symbol) FROM team_wittgenstein.portfolio_positions) AS stocks_used,
+            (SELECT COUNT(DISTINCT p.symbol)
+               FROM team_wittgenstein.price_data p
+               INNER JOIN team_wittgenstein.financial_data f
+                 ON p.symbol = f.symbol) AS stocks_used,
             (SELECT COUNT(DISTINCT rebalance_date) FROM team_wittgenstein.portfolio_positions) AS months,
             (SELECT MIN(rebalance_date) FROM team_wittgenstein.portfolio_positions) AS start_date,
             (SELECT MAX(rebalance_date) FROM team_wittgenstein.portfolio_positions) AS end_date

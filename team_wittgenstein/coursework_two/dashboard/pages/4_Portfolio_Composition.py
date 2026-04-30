@@ -105,7 +105,7 @@ def _count_exits(direction: str) -> int:
     )
 
 
-long_col, short_col = st.columns(2)
+long_col, short_col = st.columns(2, gap="medium")
 
 with long_col:
     st.markdown(
@@ -113,7 +113,7 @@ with long_col:
         f'color:{COLORS["long"]};margin-bottom:0.75rem;">LONG SIDE (130%)</div>',
         unsafe_allow_html=True,
     )
-    a, b, c, d = st.columns(4)
+    a, b, c, d = st.columns(4, gap="medium")
     with a:
         kpi_card("Top 10%", str(_count_status("long_core")), sub="Active longs")
     with b:
@@ -129,7 +129,7 @@ with short_col:
         f'color:{COLORS["short"]};margin-bottom:0.75rem;">SHORT SIDE (30%)</div>',
         unsafe_allow_html=True,
     )
-    a, b, c, d = st.columns(4)
+    a, b, c, d = st.columns(4, gap="medium")
     with a:
         kpi_card("Bottom 10%", str(_count_status("short_core")), sub="Active shorts")
     with b:
@@ -205,7 +205,7 @@ else:
         }
     )
 
-    long_t, short_t = st.columns(2)
+    long_t, short_t = st.columns(2, gap="medium")
     with long_t:
         st.markdown(
             f'<div style="color:{COLORS["long"]};font-weight:600;'
@@ -278,7 +278,7 @@ section_header(
 )
 
 if not holdings.empty:
-    s1, s2, s3 = st.columns(3)
+    s1, s2, s3 = st.columns(3, gap="medium")
     with s1:
         st.markdown("**Long stocks per sector**")
         st.caption(
@@ -320,7 +320,7 @@ if not holdings.empty:
     capped = int(holdings["liquidity_capped"].sum())
     actions = holdings["trade_action"].value_counts()
 
-    cc1, cc2, cc3, cc4 = st.columns(4)
+    cc1, cc2, cc3, cc4 = st.columns(4, gap="medium")
     with cc1:
         long_ok = abs(long_sum - 1.30) <= 0.02
         kpi_card(

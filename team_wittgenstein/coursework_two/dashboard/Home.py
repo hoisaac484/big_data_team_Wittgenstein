@@ -49,7 +49,7 @@ date_range = fmt_date_range(stats.get("start_date"), stats.get("end_date"))
 
 hero_header(
     "Team Wittgenstein - 130/30 Multi-Factor Strategy",
-    f"{date_range} · {stats.get('stocks_used', 0)} stocks · "
+    f"{date_range} · {stats.get('stocks_used', 0)} stocks in pre-filter universe · "
     f"{stats.get('months', 0)} monthly rebalances · "
     f"{stats.get('scenarios', 0)} backtested scenarios",
 )
@@ -123,7 +123,7 @@ universe_size = q.get_universe_size_latest()
 exposure = q.get_latest_net_exposure()
 last_rebalance = stats.get("end_date")
 
-c1, c2, c3, c4 = st.columns(4)
+c1, c2, c3, c4 = st.columns(4, gap="medium")
 
 with c1:
     long_w = exposure["long"]
@@ -202,7 +202,7 @@ st.dataframe(params, width="stretch", hide_index=True)
 # Strategy at a glance + scenarios summary
 # ---------------------------------------------------------------------------
 
-left, right = st.columns([1.4, 1])
+left, right = st.columns([1.4, 1], gap="medium")
 
 with left:
     section_header("Strategy at a glance")
@@ -214,7 +214,7 @@ with left:
         - **Risk-adjusted** position sizing (composite ÷ EWMA volatility)
         - **Liquidity aware** at both universe and position level
         - **Walk-forward backtest** with point-in-time data, no look-ahead
-        - **Universe:** {big_num(stats.get('stocks_used', 0))} US-listed stocks
+        - **Pre-filter universe:** {big_num(stats.get('stocks_used', 0))} US-listed stocks (before liquidity filter)
         - **Backtested:** {date_range}
         """)
 
@@ -240,5 +240,5 @@ st.caption(
     "Big Data in Quantitative Finance - CW2 - "
     "Built by Team Wittgenstein. Use the sidebar to navigate to detailed pages: "
     "Performance, Compare Scenarios, Strategy Tuner, Portfolio Composition, "
-    "Stock Deep-Dive, Factor Analysis, Methodology."
+    "Stock Deep-Dive, Factor Analysis."
 )

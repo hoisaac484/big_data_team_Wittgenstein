@@ -82,7 +82,7 @@ section_header(
     f"({len(returns_filtered)} months)",
 )
 
-row1 = st.columns(4)
+row1 = st.columns(4, gap="medium")
 
 with row1[0]:
     s = safe_get(summary, "sharpe_ratio")
@@ -127,7 +127,7 @@ with row1[3]:
         delta=f"Tracking error {pct(te)}",
     )
 
-row2 = st.columns(4)
+row2 = st.columns(4, gap="medium")
 
 with row2[0]:
     a = safe_get(summary, "alpha")
@@ -181,7 +181,7 @@ with row2[3]:
 
 section_header("Equity curve and drawdown")
 
-eq_col, dd_col = st.columns([1, 1])
+eq_col, dd_col = st.columns([1, 1], gap="medium")
 with eq_col:
     st.plotly_chart(
         ch.equity_curve(returns_filtered),
@@ -202,7 +202,7 @@ with dd_col:
 
 section_header("Monthly return analysis")
 
-c1, c2, c3 = st.columns(3)
+c1, c2, c3 = st.columns(3, gap="medium")
 with c1:
     st.markdown("**Distribution of monthly returns**")
     st.caption(

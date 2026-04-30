@@ -107,7 +107,7 @@ if not factor_scores.empty:
 else:
     latest_score = None
 
-c1, c2, c3, c4 = st.columns(4)
+c1, c2, c3, c4 = st.columns(4, gap="medium")
 with c1:
     kpi_card("Symbol", selected, sub=str(company["security"]))
 with c2:
@@ -185,7 +185,7 @@ section_header("Raw fundamental metrics")
 if factor_metrics.empty:
     st.info("No fundamental data for this symbol.")
 else:
-    fc = st.columns(4)
+    fc = st.columns(4, gap="medium")
     with fc[0]:
         st.markdown("**ROE**")
         st.plotly_chart(

@@ -279,7 +279,7 @@ if active_scenario == "baseline":
         "single parameter change would affect performance.",
     )
 
-    cols = st.columns(3)
+    cols = st.columns(3, gap="medium")
     for col, (label, key, fmt, _, places) in zip(
         cols * 2, metrics  # 6 metrics, cycle through 3 columns
     ):
@@ -304,7 +304,7 @@ else:
     )
 
     # Column headers above all the metric rows
-    headerL, headerR = st.columns(2)
+    headerL, headerR = st.columns(2, gap="medium")
     with headerL:
         _column_header(
             f"YOUR SCENARIO: {scenario_label(active_scenario)}",
@@ -324,7 +324,7 @@ else:
         a_delta = f"{diff:+.2f}" if places is not None else pct_signed(diff)
         b_delta = f"{-diff:+.2f}" if places is not None else pct_signed(-diff)
 
-        cA, cB = st.columns(2)
+        cA, cB = st.columns(2, gap="medium")
         with cA:
             kpi_card(
                 label,

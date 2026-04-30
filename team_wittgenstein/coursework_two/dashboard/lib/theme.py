@@ -137,13 +137,28 @@ CUSTOM_CSS = f"""
         max-width: 1400px;
     }}
 
-    /* KPI card - Trading 212 dark style */
+    /* Force gap between Streamlit columns regardless of testid changes */
+    [data-testid="stHorizontalBlock"],
+    [class*="stHorizontalBlock"] {{
+        gap: 1.25rem !important;
+        margin-bottom: 1.25rem !important;
+    }}
+
+    /* KPI card - fixed height so all cards in a row are identical
+       regardless of how many lines of content they have.
+       180px fits the largest case (label + value + delta + sub) with
+       a little breathing room. Less-content cards leave empty space
+       at the bottom rather than shrinking.
+       margin-bottom adds a vertical gap when cards are stacked in the
+       same column (e.g. Strategy Tuner's 2x3 baseline grid). */
     .kpi-card {{
         background: {COLORS['surface']};
         border: 1px solid {COLORS['border']};
         border-radius: 10px;
         padding: 1.4rem 1.5rem;
-        height: 100%;
+        height: 180px !important;
+        margin-bottom: 1rem;
+        box-sizing: border-box;
         transition: border-color 0.15s ease, background 0.15s ease;
     }}
     .kpi-card:hover {{

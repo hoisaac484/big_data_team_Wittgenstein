@@ -37,7 +37,7 @@ st.caption(
 
 scenarios = q.get_scenario_list()
 
-picker_a, picker_b = st.columns(2)
+picker_a, picker_b = st.columns(2, gap="medium")
 
 with picker_a:
     sid_a = st.selectbox(
@@ -88,7 +88,7 @@ section_header(
 
 # Column headers above all the metric rows so the user can clearly see
 # which side belongs to which scenario.
-headerA, headerB = st.columns(2)
+headerA, headerB = st.columns(2, gap="medium")
 
 
 def _column_header(text: str, accent: str) -> None:
@@ -131,7 +131,7 @@ def render_metric_row(
         a_delta = pct_signed(diff)
         b_delta = pct_signed(-diff)
 
-    cA, cB = st.columns(2)
+    cA, cB = st.columns(2, gap="medium")
     with cA:
         kpi_card(
             label,
