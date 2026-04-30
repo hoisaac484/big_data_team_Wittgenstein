@@ -90,7 +90,7 @@ coursework_two/
 ├── main.py                 # Pipeline orchestrator
 ├── config/
 │   └── conf.yaml           # All strategy and backtest parameters
-├── dashboard/              # Streamlit UI (8 pages)
+├── dashboard/              # Streamlit UI (7 pages)
 │   ├── Home.py
 │   ├── pages/              # Performance, Compare Scenarios, etc.
 │   └── lib/                # Reusable charts, queries, theme
@@ -168,7 +168,7 @@ The strategy itself only writes intermediate data (`portfolio_positions`, `facto
 
 ## Dashboard
 
-After the pipeline finishes, the dashboard reads from PostgreSQL and presents the results across 8 pages.
+After the pipeline finishes, the dashboard reads from PostgreSQL and presents the results across 7 pages.
 
 ```bash
 poetry run streamlit run dashboard/Home.py
@@ -183,7 +183,6 @@ poetry run streamlit run dashboard/Home.py
 | Portfolio Composition | Holdings, sector breakdown, constraint health, click-through to deep-dive |
 | Stock Deep-Dive | Per-stock factor history, fundamentals, position record |
 | Factor Analysis | IC weight evolution, composite distribution, sector z-scores, factor correlations |
-| Methodology | Formulas, schema, references, known limitations |
 
 ## Testing
 
@@ -207,7 +206,7 @@ poetry run pytest tests/evaluation/       # all evaluation tests (metrics, sensi
 poetry run pytest tests/dashboard/        # all dashboard helper tests
 ```
 
-The suite has 529 tests covering the strategy pipeline (`modules/`) and the dashboard helpers (`dashboard/lib/`). Total coverage is 98%.
+The suite has 542 tests covering the strategy pipeline (`modules/`) and the dashboard helpers (`dashboard/lib/`). Total coverage is 99%.
 
 ## Documentation
 

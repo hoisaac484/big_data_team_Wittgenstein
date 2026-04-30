@@ -22,7 +22,6 @@ poetry run streamlit run dashboard/Home.py
 - `4_Portfolio_Composition.py`: holdings, sector mix, and constraint health
 - `5_Stock_Deep_Dive.py`: per-stock positions, factor history, and fundamentals
 - `6_Factor_Analysis.py`: IC weights, distributions, and factor correlation views
-- `7_Methodology.py`: narrative explanation of formulas and design decisions
 
 ## Helper layers
 
