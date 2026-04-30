@@ -214,7 +214,7 @@ else:
         )
         long_event = st.dataframe(
             longs,
-            width='stretch',
+            width="stretch",
             hide_index=True,
             height=420,
             on_select="rerun",
@@ -230,7 +230,7 @@ else:
         )
         short_event = st.dataframe(
             shorts,
-            width='stretch',
+            width="stretch",
             hide_index=True,
             height=420,
             on_select="rerun",
@@ -255,7 +255,7 @@ else:
         if st.button(
             f"Open Stock Deep-Dive for {selected_symbol}",
             type="primary",
-            width='stretch',
+            width="stretch",
         ):
             # Use a separate "pending" key for the handoff. The Deep-Dive
             # page reads this BEFORE the selectbox renders and uses it as
@@ -288,7 +288,7 @@ if not holdings.empty:
         st.plotly_chart(
             ch.sector_stock_count_bars(holdings, "long"),
             config=ch.chart_config("long_sector_count"),
-            width='stretch',
+            width="stretch",
         )
     with s2:
         st.markdown("**Short stocks per sector**")
@@ -296,7 +296,7 @@ if not holdings.empty:
         st.plotly_chart(
             ch.sector_stock_count_bars(holdings, "short"),
             config=ch.chart_config("short_sector_count"),
-            width='stretch',
+            width="stretch",
         )
     with s3:
         st.markdown("**Net sector exposure (long − short)**")
@@ -304,7 +304,7 @@ if not holdings.empty:
         st.plotly_chart(
             ch.net_sector_exposure(holdings),
             config=ch.chart_config("net_sector"),
-            width='stretch',
+            width="stretch",
         )
 
 
@@ -371,7 +371,7 @@ if not status_history.empty:
     st.plotly_chart(
         ch.selection_status_over_time(status_history),
         config=ch.chart_config("selection_over_time"),
-        width='stretch',
+        width="stretch",
     )
 
 
@@ -391,7 +391,7 @@ if not all_positions.empty:
     st.plotly_chart(
         ch.sector_exposure_heatmap(all_positions),
         config=ch.chart_config("sector_heatmap"),
-        width='stretch',
+        width="stretch",
     )
 
 st.caption(

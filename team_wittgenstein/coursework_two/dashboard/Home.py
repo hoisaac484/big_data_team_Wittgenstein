@@ -195,7 +195,7 @@ params = pd.DataFrame(
     ],
     columns=["Parameter", "Value", "Description"],
 )
-st.dataframe(params, width='stretch', hide_index=True)
+st.dataframe(params, width="stretch", hide_index=True)
 
 
 # ---------------------------------------------------------------------------

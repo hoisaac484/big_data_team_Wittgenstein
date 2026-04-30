@@ -184,7 +184,7 @@ for group in PARAM_GROUPS:
 
 st.sidebar.divider()
 
-if st.sidebar.button("Reset all to baseline", width='stretch'):
+if st.sidebar.button("Reset all to baseline", width="stretch"):
     st.session_state["_reset_tuner"] = True
     st.rerun()
 
@@ -292,7 +292,7 @@ if active_scenario == "baseline":
     st.plotly_chart(
         ch.equity_curve(baseline_returns),
         config=ch.chart_config("baseline_equity"),
-        width='stretch',
+        width="stretch",
     )
 
 else:
@@ -356,5 +356,5 @@ else:
             "Baseline",
         ),
         config=ch.chart_config(f"{active_scenario}_vs_baseline"),
-        width='stretch',
+        width="stretch",
     )

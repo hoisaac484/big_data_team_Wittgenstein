@@ -40,7 +40,7 @@ else:
     st.plotly_chart(
         ch.ic_weights_evolution(ic_weights),
         config=ch.chart_config("ic_weights"),
-        width='stretch',
+        width="stretch",
     )
 
     # Average IC and weight per factor
@@ -60,7 +60,7 @@ else:
         }
     )
     st.markdown("**Time-averaged IC and weight per factor**")
-    st.dataframe(summary, width='stretch', hide_index=True)
+    st.dataframe(summary, width="stretch", hide_index=True)
 
 
 # ---------------------------------------------------------------------------
@@ -138,7 +138,7 @@ if dates:
         st.plotly_chart(
             ch.composite_histogram(composite_dist),
             config=ch.chart_config(f"composite_{selected_date.date()}"),
-            width='stretch',
+            width="stretch",
         )
         st.caption(
             f"{len(composite_dist)} stocks scored. "
@@ -177,7 +177,7 @@ if dates:
         st.plotly_chart(
             ch.factor_zscore_boxplot(zscores, factor_choice.replace("z_", "").title()),
             config=ch.chart_config(f"{factor_choice}_boxplot"),
-            width='stretch',
+            width="stretch",
         )
 
 
@@ -200,7 +200,7 @@ else:
     st.plotly_chart(
         ch.factor_correlation_heatmap(corr_df),
         config=ch.chart_config("factor_correlations"),
-        width='stretch',
+        width="stretch",
     )
     st.caption(
         f"Computed across **{len(corr_df):,}** stock-month observations. "

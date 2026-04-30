@@ -176,7 +176,7 @@ section_header(
 st.plotly_chart(
     ch.equity_curve_compare(ret_a, scenario_label(sid_a), ret_b, scenario_label(sid_b)),
     config=ch.chart_config(f"{sid_a}_vs_{sid_b}"),
-    width='stretch',
+    width="stretch",
 )
 
 
@@ -216,6 +216,6 @@ for label, key, fmt, higher_better in all_metrics:
 
 st.dataframe(
     pd.DataFrame(rows),
-    width='stretch',
+    width="stretch",
     hide_index=True,
 )
