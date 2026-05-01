@@ -37,19 +37,6 @@ st.caption(
 
 
 # ---------------------------------------------------------------------------
-# Reset handler runs BEFORE sliders are instantiated to avoid the
-# 'cannot modify session_state after widget instantiation' bug.
-# ---------------------------------------------------------------------------
-
-if st.session_state.get("_reset_tuner"):
-    for k in list(st.session_state.keys()):
-        if k.startswith("tuner_slider_"):
-            del st.session_state[k]
-    st.session_state["_reset_tuner"] = False
-    st.rerun()
-
-
-# ---------------------------------------------------------------------------
 # Parameter groups - sliders snap to pre-computed values only
 # ---------------------------------------------------------------------------
 
@@ -142,6 +129,16 @@ PARAM_GROUPS = [
 
 
 # ---------------------------------------------------------------------------
+# Reset handler - runs after PARAM_GROUPS is defined, before widgets render
+# ---------------------------------------------------------------------------
+
+if st.session_state.get("_reset_tuner"):
+    for group in PARAM_GROUPS:
+        st.session_state[f"tuner_slider_{group['key']}"] = group["baseline"]
+    st.session_state["_reset_tuner"] = False
+
+
+# ---------------------------------------------------------------------------
 # on_change callback: when ONE slider moves, reset all OTHER sliders to
 # baseline. This enforces "only one parameter change at a time" without
 # showing a warning - the UI just snaps the others back automatically.
@@ -165,6 +162,12 @@ st.sidebar.caption(
     "auto-resets the previous one."
 )
 
+# Initialise session_state before widgets so value= is not needed on the widget
+for group in PARAM_GROUPS:
+    key = f"tuner_slider_{group['key']}"
+    if key not in st.session_state:
+        st.session_state[key] = group["baseline"]
+
 selected_scenarios = []
 
 for group in PARAM_GROUPS:
@@ -172,7 +175,6 @@ for group in PARAM_GROUPS:
     chosen_value = st.sidebar.select_slider(
         group["label"],
         options=group["options"],
-        value=group["baseline"],
         format_func=group["format"],
         help=group["help"],
         key=slider_key,

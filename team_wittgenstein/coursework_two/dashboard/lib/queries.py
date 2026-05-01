@@ -33,10 +33,11 @@ def get_database_stats() -> dict:
     df = query("""
         SELECT
             (SELECT COUNT(*) FROM team_wittgenstein.backtest_summary) AS scenarios,
-            (SELECT COUNT(DISTINCT p.symbol)
-               FROM team_wittgenstein.price_data p
-               INNER JOIN team_wittgenstein.financial_data f
-                 ON p.symbol = f.symbol) AS stocks_used,
+            (SELECT COUNT(*) FROM (
+               SELECT symbol FROM team_wittgenstein.price_data
+               INTERSECT
+               SELECT symbol FROM team_wittgenstein.financial_data
+             ) t) AS stocks_used,
             (SELECT COUNT(DISTINCT rebalance_date)
                FROM team_wittgenstein.portfolio_positions) AS months,
             (SELECT MIN(rebalance_date)

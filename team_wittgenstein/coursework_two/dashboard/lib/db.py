@@ -40,6 +40,7 @@ def query(sql: str, params: dict | None = None) -> pd.DataFrame:
         return pd.read_sql(text(sql), conn, params=params or {})
 
 
+@st.cache_data(ttl=60, show_spinner=False)
 def health_check() -> bool:
     """Return True if the DB is reachable. Used by the Home page badge."""
     try:
