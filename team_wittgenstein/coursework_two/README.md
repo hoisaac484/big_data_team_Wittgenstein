@@ -77,7 +77,7 @@ If you re-run the full pipeline and want to update the committed seed (e.g. afte
 
 ```bash
 docker exec postgres_db_cw pg_dump -U postgres -d fift \
-  --schema=team_wittgenstein --no-owner --no-acl \
+  --schema=team_wittgenstein --no-owner --no-acl --clean \
   | gzip > team_wittgenstein/coursework_two/docker/seed/seed.sql.gz
 ```
 
