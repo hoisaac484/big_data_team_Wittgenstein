@@ -9,8 +9,8 @@ poetry run streamlit run dashboard/Home.py
 ## Structure
 
 - `Home.py`: landing page and high-level strategy overview
-- `pages/`: page entrypoints for performance, comparison, portfolio composition,
-  stock deep dives, factor analysis, and methodology
+- `pages/`: page entrypoints for performance, comparison, strategy tuning,
+  portfolio composition, stock deep dives, and factor analysis
 - `lib/`: reusable dashboard helpers for queries, formatting, charts,
   components, theme, and database access
 

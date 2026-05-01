@@ -96,7 +96,7 @@ Build the Sphinx docs:
    cd docs
    make html
 
-Then open ``build/index.html`` in a browser.
+Then open ``build/html/index.html`` in a browser.
 
 Regenerating the seed
 ---------------------
